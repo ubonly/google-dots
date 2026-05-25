@@ -1,0 +1,1385 @@
+// QuickSettingsPopup.qml — ChromeOS Material You control center
+// Wi-Fi + Bluetooth tiles, brightness/volume sliders, Wi-Fi network dropdown.
+// Catppuccin Mocha palette, inline reusable Components.
+
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+import QtQuick
+import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
+
+PanelWindow {
+    id: root
+    property var  screenRef
+    property var  settingsWindow: null
+    property bool popupVisible: false
+    onPopupVisibleChanged: {
+        if (!popupVisible) { 
+            btPanelOpen = false; wifiMenuOpen = false; powerMenuOpen = false 
+        } else {
+            focusGrabber.forceActiveFocus()
+        }
+    }
+
+    screen: screenRef
+    anchors {
+        bottom: true; right: true
+        left: popupVisible
+        top: popupVisible
+    }
+    exclusiveZone: -1
+    WlrLayershell.layer:     WlrLayer.Overlay
+    WlrLayershell.namespace: "quickshell-quicksettings"
+    WlrLayershell.keyboardFocus: popupVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    visible: popupVisible
+    color: "transparent"
+
+    // ── Dismiss: click anywhere outside the panel ────────────────────────
+    MouseArea {
+        anchors.fill: parent
+        visible: root.popupVisible
+        z: 0
+        onClicked: {
+            root.popupVisible    = false
+            root.wifiPassVisible = false
+            root.wifiPassError   = ""
+        }
+    }
+
+    Item {
+        id: focusGrabber
+        focus: true
+        Keys.onEscapePressed: {
+            if (root.wifiPassVisible) {
+                root.wifiPassVisible = false
+                root.wifiPassError   = ""
+                wifiPassField.text   = ""
+            } else {
+                root.popupVisible = false
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  PALETTE  (Catppuccin Mocha — Material You)
+    // ══════════════════════════════════════════════════════════════════════
+    readonly property color panelBg:       "#1e1e2e"
+    readonly property color activeColor:   "#cba6f7"   // lavender
+    readonly property color inactiveColor: "#313244"   // surface0
+    readonly property color textDark:      "#11111b"   // crust  (on active)
+    readonly property color textLight:     "#cdd6f4"   // text   (on inactive)
+    readonly property color subtextDark:   "#45475a"   // surface1 (subtitle on active)
+    readonly property color subtextLight:  "#6c7086"   // overlay0 (subtitle on inactive)
+    readonly property color sliderBg:      "#313244"
+    readonly property color sliderFill:    "#cba6f7"
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  STATE
+    // ══════════════════════════════════════════════════════════════════════
+    property string wifiName:   "..."
+    property int    wifiSignal: -1
+    property bool   wifiOn:     false
+    property bool   btOn:       false
+    property int    volume:     50
+
+    // ── Wi-Fi password popup state ──────────────────────────────────────────
+    property bool   wifiPassVisible: false
+    property string wifiPassSsid:    ""
+    property string wifiPassError:   ""
+    property int    brightness: 80
+
+    // Sub-menu state
+    property bool wifiMenuOpen:    false
+    property bool btPanelOpen:     false
+    property bool powerMenuOpen:   false
+    property var  knownNetworks:   []
+    property var  unknownNetworks: []
+
+    function sigLabel(s) {
+        if (s < 0) return "Off"; if (s < 30) return "Weak"
+        if (s < 65) return "Medium"; return "Strong"
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  PROCESSES
+    // ══════════════════════════════════════════════════════════════════════
+    Process { id: wifiProc; running: false
+        command: ["bash","-c","nmcli -t -f ACTIVE,SSID,SIGNAL dev wifi 2>/dev/null | awk -F: '/^yes/{print $2\"|\"$3;exit}'"]
+        stdout: SplitParser { onRead: function(l){
+            var p=l.trim().split("|")
+            if(p.length>=1&&p[0]!==""){root.wifiName=p[0];root.wifiSignal=parseInt(p[1])||50;root.wifiOn=true}
+            else{root.wifiName="Wi-Fi";root.wifiSignal=-1;root.wifiOn=false}
+        }}
+    }
+    Process { id: btProc; running: false
+        command:["bash","-c","bluetoothctl show 2>/dev/null|grep -q 'Powered: yes'&&echo on||echo off"]
+        stdout: SplitParser { onRead: function(l){root.btOn=l.trim()==="on"} }
+    }
+    Process { id: volProc; running: false
+        command:["bash","-c","wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null|awk '{printf\"%d\",$2*100}'"]
+        stdout: SplitParser { onRead: function(l){var v=parseInt(l);if(!isNaN(v))root.volume=v} }
+    }
+    Process { id: briProc; running: false
+        command:["bash","-c","brightnessctl -m 2>/dev/null|awk -F, '{gsub(/%/,\"\",$4);print $4}'|head -1"]
+        stdout: SplitParser { onRead: function(l){var v=parseInt(l);if(!isNaN(v))root.brightness=v} }
+    }
+    Process { id: cmdProc;  command:[]; running:false
+        onRunningChanged:{if(!running){wifiProc.running=true;btProc.running=true}}
+    }
+    Process { id: volSet;   command:[]; running:false }
+    Process { id: briSet;   command:[]; running:false }
+    Process { id: powerProc; command:[]; running:false }
+
+    // ── Wi-Fi network scan ──────────────────────────────────────────────
+    property string _wifiBuf: ""
+
+    Process {
+        id: wifiScanProc; running: false
+        command: ["bash", "-c",
+            "known=$(nmcli -t -f NAME con show 2>/dev/null | sort -u); " +
+            "nmcli -t -f SSID,SIGNAL,SECURITY,IN-USE dev wifi list --rescan no 2>/dev/null | " +
+            "while IFS=: read ssid sig sec used; do " +
+            "[ -z \"$ssid\" ] && continue; " +
+            "is_known=$(echo \"$known\" | grep -qxF \"$ssid\" && echo 1 || echo 0); " +
+            "echo \"${ssid}|${sig}|${sec}|${used}|${is_known}\"; " +
+            "done | awk -F'|' '!seen[$1]++' | sort -t'|' -k5,5rn -k2,2rn"
+        ]
+        stdout: SplitParser {
+            onRead: function(line) { root._wifiBuf += line + "\n" }
+        }
+        onRunningChanged: {
+            if (!running) {
+                var lines = root._wifiBuf.trim().split("\n")
+                var kn = [], un = []
+                for (var i = 0; i < lines.length; i++) {
+                    var p = lines[i].split("|")
+                    if (p.length < 5) continue
+                    var e = { ssid: p[0], signal: parseInt(p[1])||0,
+                              security: p[2]||"", inUse: p[3]==="*", isKnown: p[4]==="1" }
+                    if (e.isKnown) kn.push(e); else un.push(e)
+                }
+                root.knownNetworks = kn
+                root.unknownNetworks = un
+                root._wifiBuf = ""
+            } else { root._wifiBuf = "" }
+        }
+    }
+
+    Process { id: wifiConnProc; command:[]; running:false
+        onRunningChanged: { if(!running){ wifiProc.running=true; wifiScanProc.running=true } }
+    }
+
+    // ── nmcli connect with password ─────────────────────────────────────────
+    property string _wifiPassBuf: ""
+    Process {
+        id: wifiPassProc
+        command: []
+        running: false
+        stdout: SplitParser { onRead: function(l) { root._wifiPassBuf += l + "\n" } }
+        stderr: SplitParser { onRead: function(l) { root._wifiPassBuf += l + "\n" } }
+        onRunningChanged: {
+            if (!running) {
+                var out = root._wifiPassBuf.toLowerCase()
+                root._wifiPassBuf = ""
+                if (out.indexOf("error") !== -1 || out.indexOf("failed") !== -1
+                        || out.indexOf("secrets") !== -1 || out.indexOf("wrong") !== -1) {
+                    root.wifiPassError = "Неверный пароль или ошибка подключения"
+                } else {
+                    root.wifiPassVisible = false
+                    root.wifiPassError   = ""
+                    wifiProc.running     = true
+                    wifiScanProc.running = true
+                }
+            }
+        }
+    }
+
+    Timer{interval:5000;repeat:true;running:true;onTriggered:wifiProc.running=true}
+    Timer{interval:8000;repeat:true;running:true;onTriggered:btProc.running=true}
+    Timer{interval:3000;repeat:true;running:true;onTriggered:volProc.running=true}
+    Timer{interval:5000;repeat:true;running:true;onTriggered:briProc.running=true}
+    Component.onCompleted:{wifiProc.running=true;btProc.running=true;volProc.running=true;briProc.running=true}
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  REUSABLE INLINE COMPONENTS
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── WideButton: split-interactive tile ─────────────────────────────
+    //    Icon click  → iconClicked()  (toggle state)
+    //    Card body   → clicked()      (open sub-menu)
+    component WideButton: Rectangle {
+        id: wb
+        property bool   active:   false
+        property string icon:     ""
+        property string title:    ""
+        property string subtitle: ""
+        signal iconClicked()
+        signal clicked()
+
+        Layout.fillWidth:  true
+        implicitHeight: 76
+        radius: 18
+        color:  active ? root.activeColor : root.inactiveColor
+        Behavior on color { ColorAnimation { duration: 180 } }
+
+        // Card-body MouseArea (covers everything, lowest z)
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: wb.clicked()
+        }
+
+        RowLayout {
+            anchors { fill:parent; leftMargin:16; rightMargin:12 }
+            spacing: 10
+
+            // ── Icon circle — separate toggle target (higher z) ──
+            Rectangle {
+                Layout.preferredWidth:40; Layout.preferredHeight:40; radius:20
+                color: iconArea.containsMouse
+                    ? (wb.active ? Qt.rgba(0,0,0,0.18) : Qt.rgba(1,1,1,0.12))
+                    : (wb.active ? Qt.rgba(0,0,0,0.10) : Qt.rgba(1,1,1,0.06))
+                Behavior on color { ColorAnimation { duration: 120 } }
+
+                Image {
+                    id: wbIconImg
+                    anchors.centerIn: parent
+                    width: 20; height: 20
+                    source: wb.icon
+                    sourceSize: Qt.size(20, 20)
+                    visible: false
+                }
+                ColorOverlay {
+                    anchors.fill: wbIconImg
+                    source: wbIconImg
+                    color: wb.active ? root.textDark : root.textLight
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                }
+
+                MouseArea {
+                    id: iconArea; anchors.fill:parent
+                    cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                    onClicked: wb.iconClicked()
+                }
+            }
+
+            // ── Labels (clicks fall through to card-body) ──
+            ColumnLayout {
+                Layout.fillWidth:true; spacing:1
+                Text {
+                    text:wb.title; font.pixelSize:13; font.family:"Google Sans"
+                    font.weight:Font.Medium
+                    color: wb.active ? root.textDark : root.textLight
+                    elide:Text.ElideRight; Layout.fillWidth:true
+                }
+                Text {
+                    text:wb.subtitle; font.pixelSize:11; font.family:"Google Sans"
+                    color: wb.active ? root.subtextDark : root.subtextLight
+                    visible: wb.subtitle !== ""
+                }
+            }
+
+            // ── Chevron (clicks fall through to card-body) ──
+            Text {
+                text:"›"; font.pixelSize:20; font.weight:Font.Bold
+                color: wb.active ? root.subtextDark : root.subtextLight
+            }
+        }
+    }
+
+    // ── SliderRow: thick rounded slider with icon + right buttons ────────
+    component SliderRow: Rectangle {
+        id: sr
+        property string leftIcon: ""
+        property string rightIcon: ""
+        property int    value: 50
+        property bool   dragging: false
+        signal moved(int newValue)
+
+        Layout.fillWidth: true
+        implicitHeight: 48; radius: 24
+        color: root.sliderBg
+
+        RowLayout {
+            anchors { fill:parent; leftMargin:16; rightMargin:8 }
+            spacing: 10
+
+            Item {
+                implicitWidth: 22; implicitHeight: 22
+                Image {
+                    id: srLeftImg
+                    anchors.fill: parent
+                    source: sr.leftIcon
+                    sourceSize: Qt.size(22, 22)
+                    visible: false
+                }
+                ColorOverlay {
+                    anchors.fill: srLeftImg
+                    source: srLeftImg
+                    color: root.sliderFill
+                }
+            }
+
+            Item {
+                Layout.fillWidth:true; implicitHeight:12
+
+                Rectangle {
+                    id: sliderTrack
+                    anchors { left:parent.left; right:parent.right; verticalCenter:parent.verticalCenter }
+                    height:8; radius:4; color:Qt.rgba(0.30,0.28,0.40,0.60)
+
+                    Rectangle {
+                        width: Math.max(8, parent.width * (sr.value / 100))
+                        height:parent.height; radius:parent.radius; color:root.sliderFill
+                        Behavior on width { NumberAnimation { duration: sr.dragging ? 0 : 100 } }
+                    }
+
+                    Rectangle {
+                        x: Math.max(0, Math.min(parent.width - 16, parent.width * (sr.value / 100) - 8))
+                        y: -4; width:16; height:16; radius:8
+                        color: root.sliderFill
+                        Behavior on x { NumberAnimation { duration: sr.dragging ? 0 : 100 } }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 24; height: 24; radius: 12
+                            color: Qt.rgba(0.80, 0.65, 0.97, sr.dragging ? 0.20 : 0)
+                            Behavior on color { ColorAnimation { duration: 200 } }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors { fill:parent; topMargin:-12; bottomMargin:-12 }
+                        cursorShape: Qt.PointingHandCursor
+
+                        onPressed: function(m) {
+                            sr.dragging = true
+                            var p = Math.max(0, Math.min(100, Math.round(m.x / width * 100)))
+                            sr.moved(p)
+                        }
+                        onPositionChanged: function(m) {
+                            if (sr.dragging) {
+                                var p = Math.max(0, Math.min(100, Math.round(m.x / width * 100)))
+                                sr.moved(p)
+                            }
+                        }
+                        onReleased: { sr.dragging = false }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.preferredWidth:36; Layout.preferredHeight:36; radius:10
+                color: root.inactiveColor
+                Image {
+                    id: srRightImg
+                    anchors.centerIn: parent
+                    width: 18; height: 18
+                    source: sr.rightIcon
+                    sourceSize: Qt.size(18, 18)
+                    visible: false
+                }
+                ColorOverlay {
+                    anchors.fill: srRightImg
+                    source: srRightImg
+                    color: root.textLight
+                }
+                MouseArea { anchors.fill:parent; cursorShape:Qt.PointingHandCursor }
+            }
+
+            Rectangle {
+                Layout.preferredWidth:28; Layout.preferredHeight:28; radius:14
+                color: "transparent"
+                Text {
+                    anchors.centerIn:parent; text:"›"; font.pixelSize:18; font.weight:Font.Bold
+                    color:root.subtextLight
+                }
+                MouseArea { anchors.fill:parent; cursorShape:Qt.PointingHandCursor }
+            }
+        }
+    }
+
+    // ── NetworkItem: single row in Wi-Fi dropdown ───────────────────────
+    component NetworkItem: Rectangle {
+        id: ni
+        property string ssid:     ""
+        property int    sigVal:   0
+        property string security: ""
+        property bool   inUse:    false
+        signal clicked()
+
+        implicitHeight: 42
+        Layout.fillWidth: true
+        radius: 12
+        color: niArea.containsMouse ? Qt.rgba(1,1,1,0.06) : "transparent"
+        Behavior on color { ColorAnimation { duration: 100 } }
+
+        RowLayout {
+            anchors { fill:parent; leftMargin:14; rightMargin:14 }
+            spacing: 10
+
+            Item {
+                implicitWidth: 18; implicitHeight: 18
+                Image {
+                    id: niWifiImg
+                    anchors.fill: parent
+                    source: {
+                        if (ni.sigVal >= 75) return "assets/icons/signal-wifi-4-bar.svg"
+                        if (ni.sigVal >= 50) return "assets/icons/network-wifi-3-bar.svg"
+                        if (ni.sigVal >= 25) return "assets/icons/network-wifi-2-bar.svg"
+                        return "assets/icons/network-wifi-1-bar.svg"
+                    }
+                    sourceSize: Qt.size(18, 18)
+                    visible: false
+                }
+                ColorOverlay {
+                    anchors.fill: niWifiImg
+                    source: niWifiImg
+                    color: ni.inUse ? root.activeColor : root.textLight
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                }
+            }
+
+            Text {
+                text: ni.ssid; font.pixelSize:13; font.family:"Google Sans"
+                font.weight: ni.inUse ? Font.SemiBold : Font.Normal
+                color: ni.inUse ? root.activeColor : root.textLight
+                elide: Text.ElideRight; Layout.fillWidth: true
+            }
+
+            Rectangle {
+                visible: ni.inUse
+                implicitWidth: connLbl.implicitWidth + 12; implicitHeight: 18; radius: 9
+                color: Qt.rgba(0.80, 0.65, 0.97, 0.15)
+                Text {
+                    id: connLbl; anchors.centerIn:parent
+                    text:"Connected"; font.pixelSize:9; font.family:"Google Sans"
+                    font.weight:Font.SemiBold; color:root.activeColor
+                }
+            }
+
+            Item {
+                visible: ni.security !== "" && ni.security !== "--"
+                implicitWidth: 14; implicitHeight: 14
+                Image {
+                    id: niLockImg
+                    anchors.fill: parent
+                    source: "assets/icons/lock.svg"
+                    sourceSize: Qt.size(14, 14)
+                    visible: false
+                }
+                ColorOverlay {
+                    anchors.fill: niLockImg
+                    source: niLockImg
+                    color: root.subtextLight
+                }
+            }
+
+            Text {
+                text: ni.sigVal + "%"; font.pixelSize:11; font.family:"Google Sans"
+                color: root.subtextLight
+            }
+        }
+
+        MouseArea {
+            id: niArea; anchors.fill:parent
+            cursorShape:Qt.PointingHandCursor; hoverEnabled:true
+            onClicked: ni.clicked()
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  MAIN PANEL
+    // ══════════════════════════════════════════════════════════════════════
+    Rectangle {
+        id: panel
+        z: 10
+        anchors { bottom:parent.bottom; bottomMargin:86; right:parent.right; rightMargin:16 }
+
+        // Stop clicks on the panel from dismissing it
+        MouseArea { anchors.fill: parent; onClicked: {} }
+        width:  380
+        height: root.btPanelOpen
+            ? (btCol.implicitHeight + 32)
+            : (outerCol.implicitHeight + 32)
+        Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        radius: 24
+        color:  root.panelBg
+        visible: root.popupVisible
+        opacity: root.popupVisible ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation{duration:140;easing.type:Easing.OutCubic} }
+
+        border.color: Qt.rgba(1, 1, 1, 0.05)
+        border.width: 1
+
+        ColumnLayout {
+            id: outerCol
+            anchors {
+                top:parent.top;    topMargin:16
+                left:parent.left;  leftMargin:16
+                right:parent.right;rightMargin:16
+            }
+            spacing: 10
+            visible: !root.btPanelOpen
+
+            // ──────────────────────────────────────────────────────────────
+            //  TILES: Wi-Fi + Bluetooth  (side by side)
+            // ──────────────────────────────────────────────────────────────
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                WideButton {
+                    active: root.wifiOn
+                    icon:   "assets/icons/wifi.svg"
+                    title:  root.wifiOn ? root.wifiName : "Wi-Fi"
+                    subtitle: root.wifiOn ? root.sigLabel(root.wifiSignal) : "Off"
+                    Layout.fillWidth: true
+                    onIconClicked: {
+                        cmdProc.command = root.wifiOn
+                            ? ["nmcli","radio","wifi","off"]
+                            : ["nmcli","radio","wifi","on"]
+                        cmdProc.running = true
+                    }
+                    onClicked: {
+                        root.wifiMenuOpen = !root.wifiMenuOpen
+                        if (root.wifiMenuOpen) wifiScanProc.running = true
+                    }
+                }
+
+                WideButton {
+                    active: root.btOn
+                    icon:   "assets/icons/bluetooth.svg"
+                    title:  "Bluetooth"
+                    subtitle: root.btOn ? "On" : "Off"
+                    Layout.fillWidth: true
+                    onIconClicked: {
+                        cmdProc.command = root.btOn
+                            ? ["bluetoothctl","power","off"]
+                            : ["bluetoothctl","power","on"]
+                        cmdProc.running = true
+                    }
+                    onClicked: {
+                        root.btPanelOpen = true
+                    }
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────
+            //  WI-FI DROPDOWN
+            // ──────────────────────────────────────────────────────────────
+            Rectangle {
+                id: wifiDropdown
+                Layout.fillWidth: true
+                implicitHeight: root.wifiMenuOpen ? wifiCol.implicitHeight + 24 : 0
+                clip: true
+                radius: 18
+                color: Qt.rgba(0.14, 0.14, 0.20, 0.80)
+                border.color: Qt.rgba(1, 1, 1, 0.06)
+                border.width: 1
+                visible: implicitHeight > 0
+                Behavior on implicitHeight {
+                    NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                }
+
+                ColumnLayout {
+                    id: wifiCol
+                    anchors {
+                        top:parent.top; topMargin:12
+                        left:parent.left; leftMargin:8
+                        right:parent.right; rightMargin:8
+                    }
+                    spacing: 2
+
+                    // Known Networks
+                    Text {
+                        text: "Known networks"
+                        font.pixelSize:11; font.family:"Google Sans"; font.weight:Font.SemiBold
+                        color: root.subtextLight
+                        Layout.leftMargin:8; Layout.bottomMargin:2
+                        visible: root.knownNetworks.length > 0
+                    }
+
+                    Repeater {
+                        model: root.knownNetworks
+                        NetworkItem {
+                            ssid: modelData.ssid; sigVal: modelData.signal
+                            security: modelData.security; inUse: modelData.inUse
+                            onClicked: {
+                                wifiConnProc.command = ["nmcli","con","up",modelData.ssid]
+                                wifiConnProc.running = true
+                            }
+                        }
+                    }
+
+                    // Separator
+                    Rectangle {
+                        Layout.fillWidth:true; Layout.topMargin:4; Layout.bottomMargin:4
+                        Layout.leftMargin:8; Layout.rightMargin:8
+                        implicitHeight: 1; color: Qt.rgba(1,1,1,0.06)
+                        visible: root.knownNetworks.length > 0 && root.unknownNetworks.length > 0
+                    }
+
+                    // Unknown Networks
+                    Text {
+                        text: "Unknown networks"
+                        font.pixelSize:11; font.family:"Google Sans"; font.weight:Font.SemiBold
+                        color: root.subtextLight
+                        Layout.leftMargin:8; Layout.bottomMargin:2
+                        visible: root.unknownNetworks.length > 0
+                    }
+
+                    Repeater {
+                        model: root.unknownNetworks
+                        NetworkItem {
+                            ssid: modelData.ssid; sigVal: modelData.signal
+                            security: modelData.security; inUse: false
+                            onClicked: {
+                                root.wifiPassSsid    = modelData.ssid
+                                root.wifiPassError   = ""
+                                wifiPassField.text   = ""
+                                root.wifiPassVisible = true
+                            }
+                        }
+                    }
+
+                    // Empty state
+                    Text {
+                        visible: root.knownNetworks.length === 0 && root.unknownNetworks.length === 0
+                        text: "Scanning for networks…"
+                        font.pixelSize:12; font.family:"Google Sans"; font.italic:true
+                        color: root.subtextLight
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.topMargin:8; Layout.bottomMargin:8
+                    }
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────
+            //  VOLUME SLIDER
+            // ──────────────────────────────────────────────────────────────
+            SliderRow {
+                leftIcon:  "assets/icons/volume-up.svg"
+                rightIcon: "assets/icons/music-note.svg"
+                value: root.volume
+                onMoved: function(v) {
+                    root.volume = v
+                    volSet.command = ["wpctl","set-volume","@DEFAULT_AUDIO_SINK@",(v/100).toFixed(2)]
+                    volSet.running = true
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────
+            //  BRIGHTNESS SLIDER
+            // ──────────────────────────────────────────────────────────────
+            SliderRow {
+                leftIcon:  "assets/icons/brightness-5.svg"
+                rightIcon: "assets/icons/wb-sunny.svg"
+                value: root.brightness
+                onMoved: function(v) {
+                    root.brightness = v
+                    briSet.command = ["brightnessctl","set",v+"%"]
+                    briSet.running = true
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────
+            //  FOOTER: Power + Settings
+            // ──────────────────────────────────────────────────────────────
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                spacing: 8
+
+                Rectangle {
+                    id: powerBtn
+                    implicitWidth:56; implicitHeight:38; radius:19
+                    color: root.inactiveColor
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    RowLayout { anchors.centerIn:parent; spacing:4
+                        Image {
+                            id: powerImg
+                            width: 17; height: 17
+                            source: "assets/icons/power-settings-new.svg"
+                            sourceSize: Qt.size(17, 17)
+                            visible: false
+                        }
+                        ColorOverlay {
+                            width: powerImg.width; height: powerImg.height
+                            source: powerImg
+                            color: root.textLight
+                        }
+                        Text { text:"▾"; font.pixelSize:11; color:root.subtextLight }
+                    }
+
+                    MouseArea {
+                        anchors.fill:parent; cursorShape:Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onContainsMouseChanged: parent.color = containsMouse
+                            ? Qt.lighter(root.inactiveColor, 1.3) : root.inactiveColor
+                        onClicked: root.powerMenuOpen = !root.powerMenuOpen
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Rectangle {
+                    id: settingsBtn
+                    implicitWidth:38; implicitHeight:38; radius:19
+                    color: root.inactiveColor
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    Image {
+                        id: settingsImg
+                        anchors.centerIn: parent
+                        width: 17; height: 17
+                        source: "assets/icons/settings.svg"
+                        sourceSize: Qt.size(17, 17)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.fill: settingsImg
+                        source: settingsImg
+                        color: root.textLight
+                    }
+
+                    MouseArea {
+                        anchors.fill:parent; cursorShape:Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onContainsMouseChanged: parent.color = containsMouse
+                            ? Qt.lighter(root.inactiveColor, 1.3) : root.inactiveColor
+                        onClicked: {
+                            if (root.settingsWindow)
+                                root.settingsWindow.settingsVisible = true
+                            root.popupVisible = false
+                        }
+                    }
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────
+            //  POWER MENU DROPDOWN
+            // ──────────────────────────────────────────────────────────────
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: root.powerMenuOpen ? powerMenuCol.implicitHeight + 16 : 0
+                clip: true
+                radius: 18
+                color: Qt.rgba(0.14, 0.14, 0.20, 0.80)
+                border.color: Qt.rgba(1, 1, 1, 0.06)
+                border.width: 1
+                visible: implicitHeight > 0
+                Behavior on implicitHeight {
+                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                }
+
+                ColumnLayout {
+                    id: powerMenuCol
+                    anchors {
+                        top: parent.top; topMargin: 8
+                        left: parent.left; leftMargin: 6
+                        right: parent.right; rightMargin: 6
+                    }
+                    spacing: 0
+
+                    // ── Inline component: single power menu row ──────
+                    Repeater {
+                        model: [
+                            { icon: "assets/icons/power-settings-new.svg", label: "Выключить",     cmd: "systemctl poweroff" },
+                            { icon: "assets/icons/restart-alt.svg",       label: "Перезагрузить",  cmd: "systemctl reboot" },
+                            { icon: "assets/icons/logout.svg",            label: "Выйти",          cmd: "hyprctl dispatch exit" },
+                            { icon: "assets/icons/lock-outline.svg",      label: "Заблокировать",  cmd: "hyprlock" }
+                        ]
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 42
+                            radius: 12
+                            color: pmArea.containsMouse ? Qt.rgba(1,1,1,0.07) : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            RowLayout {
+                                anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
+                                spacing: 12
+
+                                Item {
+                                    implicitWidth: 20; implicitHeight: 20
+                                    Image {
+                                        id: pmIcon
+                                        anchors.fill: parent
+                                        source: modelData.icon
+                                        sourceSize: Qt.size(20, 20)
+                                        visible: false
+                                    }
+                                    ColorOverlay {
+                                        anchors.fill: pmIcon
+                                        source: pmIcon
+                                        color: root.textLight
+                                    }
+                                }
+
+                                Text {
+                                    text: modelData.label
+                                    font.pixelSize: 13; font.family: "Google Sans"
+                                    font.weight: Font.Normal
+                                    color: root.textLight
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            MouseArea {
+                                id: pmArea; anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                                onClicked: {
+                                    root.powerMenuOpen = false
+                                    root.popupVisible  = false
+                                    powerProc.command = ["bash", "-c", modelData.cmd]
+                                    powerProc.running = true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item { implicitHeight: 2 }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  BLUETOOTH SUB-MENU PANEL
+        // ══════════════════════════════════════════════════════════════
+        ColumnLayout {
+            id: btCol
+            visible: root.btPanelOpen
+            anchors {
+                top:parent.top;    topMargin:16
+                left:parent.left;  leftMargin:16
+                right:parent.right;rightMargin:16
+            }
+            spacing: 10
+
+            // ── Header: Back  |  "Bluetooth"  |  Settings gear ──
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 0
+
+                // Back button
+                Rectangle {
+                    implicitWidth:36; implicitHeight:36; radius:18
+                    color: backArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                    Image {
+                        id: backImg
+                        anchors.centerIn: parent
+                        width: 18; height: 18
+                        source: "assets/icons/arrow-back.svg"
+                        sourceSize: Qt.size(18, 18)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.fill: backImg
+                        source: backImg
+                        color: root.textLight
+                    }
+                    MouseArea {
+                        id: backArea; anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                        onClicked: root.btPanelOpen = false
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: "Bluetooth"
+                    font.pixelSize: 16; font.family: "Google Sans"
+                    font.weight: Font.SemiBold
+                    color: root.textLight
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // Settings gear
+                Rectangle {
+                    implicitWidth:36; implicitHeight:36; radius:18
+                    color: gearArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                    Image {
+                        id: btGearImg
+                        anchors.centerIn: parent
+                        width: 16; height: 16
+                        source: "assets/icons/settings.svg"
+                        sourceSize: Qt.size(16, 16)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.fill: btGearImg
+                        source: btGearImg
+                        color: root.textLight
+                    }
+                    MouseArea {
+                        id: gearArea; anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                    }
+                }
+            }
+
+            // ── Main toggle card ─────────────────────────────────────
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 56
+                radius: 18
+                color: root.btOn ? root.activeColor : root.inactiveColor
+                Behavior on color { ColorAnimation { duration: 180 } }
+
+                RowLayout {
+                    anchors { fill: parent; leftMargin: 16; rightMargin: 16 }
+                    spacing: 12
+
+                    // BT icon
+                    Rectangle {
+                        Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 18
+                        color: root.btOn ? Qt.rgba(0,0,0,0.10) : Qt.rgba(1,1,1,0.06)
+                        Image {
+                            id: btToggleImg
+                            anchors.centerIn: parent
+                            width: 18; height: 18
+                            source: "assets/icons/bluetooth.svg"
+                            sourceSize: Qt.size(18, 18)
+                            visible: false
+                        }
+                        ColorOverlay {
+                            anchors.fill: btToggleImg
+                            source: btToggleImg
+                            color: root.btOn ? root.textDark : root.textLight
+                            Behavior on color { ColorAnimation { duration: 180 } }
+                        }
+                    }
+
+                    Text {
+                        text: root.btOn ? "On" : "Off"
+                        font.pixelSize: 14; font.family: "Google Sans"
+                        font.weight: Font.Medium
+                        color: root.btOn ? root.textDark : root.textLight
+                        Layout.fillWidth: true
+                    }
+
+                    // Toggle switch
+                    Rectangle {
+                        id: btSwitch
+                        implicitWidth: 44; implicitHeight: 24; radius: 12
+                        color: root.btOn
+                            ? Qt.rgba(0.06, 0.06, 0.10, 0.35)
+                            : Qt.rgba(1,1,1,0.12)
+                        Behavior on color { ColorAnimation { duration: 150 } }
+
+                        Rectangle {
+                            width: 18; height: 18; radius: 9
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: root.btOn ? parent.width - width - 3 : 3
+                            color: root.btOn ? root.textDark : root.subtextLight
+                            Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                cmdProc.command = root.btOn
+                                    ? ["bluetoothctl","power","off"]
+                                    : ["bluetoothctl","power","on"]
+                                cmdProc.running = true
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Device list card ─────────────────────────────────────
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: btDeviceCol.implicitHeight + 16
+                radius: 18
+                color: root.inactiveColor
+
+                ColumnLayout {
+                    id: btDeviceCol
+                    anchors {
+                        top: parent.top; topMargin: 8
+                        left: parent.left; leftMargin: 4
+                        right: parent.right; rightMargin: 4
+                    }
+                    spacing: 0
+
+                    // "+ Pair new device" row
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 44; radius: 12
+                        color: pairArea.containsMouse ? Qt.rgba(1,1,1,0.06) : "transparent"
+                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                        RowLayout {
+                            anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
+                            spacing: 10
+
+                            Rectangle {
+                                Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 14
+                                color: Qt.rgba(0.80, 0.65, 0.97, 0.15)
+                                Image {
+                                    id: addImg
+                                    anchors.centerIn: parent
+                                    width: 14; height: 14
+                                    source: "assets/icons/add.svg"
+                                    sourceSize: Qt.size(14, 14)
+                                    visible: false
+                                }
+                                ColorOverlay {
+                                    anchors.fill: addImg
+                                    source: addImg
+                                    color: root.activeColor
+                                }
+                            }
+
+                            Text {
+                                text: "Pair new device"
+                                font.pixelSize: 13; font.family: "Google Sans"
+                                font.weight: Font.Medium
+                                color: root.activeColor
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        MouseArea {
+                            id: pairArea; anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                            onClicked: {
+                                cmdProc.command = ["bash","-c","bluetoothctl scan on &"]
+                                cmdProc.running = true
+                            }
+                        }
+                    }
+
+                    // Separator
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 14; Layout.rightMargin: 14
+                        implicitHeight: 1
+                        color: Qt.rgba(1,1,1,0.06)
+                    }
+
+                    // Empty state placeholder
+                    Item {
+                        Layout.fillWidth: true
+                        implicitHeight: 52
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "No device connected"
+                            font.pixelSize: 12; font.family: "Google Sans"
+                            font.italic: true
+                            color: root.subtextLight
+                        }
+                    }
+                }
+            }
+
+            Item { implicitHeight: 2 }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  WI-FI PASSWORD POPUP
+    // ══════════════════════════════════════════════════════════════════════
+    Rectangle {
+        id: wifiPassOverlay
+        anchors.fill: parent
+        visible: root.wifiPassVisible && root.popupVisible
+        opacity: visible ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+        // Full-screen transparent backdrop to catch clicks everywhere
+        color: Qt.rgba(0, 0, 0, 0.35)
+
+        // Auto-focus the password field when overlay becomes visible
+        onVisibleChanged: {
+            if (visible) {
+                focusTimer.restart()
+            }
+        }
+        Timer {
+            id: focusTimer
+            interval: 50
+            onTriggered: wifiPassField.forceActiveFocus()
+        }
+
+        // Catch any key press when focus is NOT on the TextInput → close
+        focus: visible
+        Keys.onPressed: function(event) {
+            if (!wifiPassField.activeFocus) {
+                root.wifiPassVisible = false
+                root.wifiPassError   = ""
+                wifiPassField.text   = ""
+                event.accepted = true
+            }
+        }
+
+        // ── Dismiss on backdrop click (outside the card) ────────────────
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                root.wifiPassVisible = false
+                root.wifiPassError   = ""
+                wifiPassField.text   = ""
+            }
+        }
+
+        // ── Password card (positioned near the panel in top-right) ──────
+        Rectangle {
+            id: wifiPassCard
+            z: 10
+            anchors {
+                bottom: parent.bottom; bottomMargin: 86
+                right: parent.right; rightMargin: 16
+            }
+            width: 380
+            height: wifiPassCol.implicitHeight + 48
+            radius: 20
+            color: root.panelBg
+            border.color: Qt.rgba(1, 1, 1, 0.07)
+            border.width: 1
+
+            // Stop clicks from propagating to overlay dismiss; re-focus field
+            MouseArea {
+                anchors.fill: parent
+                onClicked: wifiPassField.forceActiveFocus()
+            }
+
+            ColumnLayout {
+                id: wifiPassCol
+                anchors {
+                    top: parent.top; topMargin: 24
+                    left: parent.left; leftMargin: 20
+                    right: parent.right; rightMargin: 20
+                }
+                spacing: 0
+
+                // ── Lock icon ────────────────────────────────────────
+                Item {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.bottomMargin: 12
+                    implicitWidth: 40; implicitHeight: 40
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 20
+                        color: Qt.rgba(0.80, 0.65, 0.97, 0.15)
+                    }
+                    Image {
+                        id: popupLockImg
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: "assets/icons/lock.svg"
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.fill: popupLockImg
+                        source: popupLockImg
+                        color: root.activeColor
+                    }
+                }
+
+                // ── Network name ─────────────────────────────────────
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.bottomMargin: 4
+                    text: root.wifiPassSsid
+                    font.pixelSize: 15; font.family: "Google Sans"
+                    font.weight: Font.SemiBold
+                    color: root.textLight
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.bottomMargin: 20
+                    text: "Введите пароль для подключения"
+                    font.pixelSize: 11; font.family: "Google Sans"
+                    color: root.subtextLight
+                }
+
+                // ── Password field ────────────────────────────────────
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.bottomMargin: 8
+                    implicitHeight: 44
+                    radius: 12
+                    color: Qt.rgba(1, 1, 1, 0.05)
+                    border.color: wifiPassField.activeFocus
+                        ? Qt.rgba(0.80, 0.65, 0.97, 0.70)
+                        : Qt.rgba(1, 1, 1, 0.10)
+                    border.width: wifiPassField.activeFocus ? 1.5 : 1
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                    RowLayout {
+                        anchors { fill: parent; leftMargin: 14; rightMargin: 10 }
+                        spacing: 8
+
+                        TextInput {
+                            id: wifiPassField
+                            Layout.fillWidth: true
+                            echoMode: showPassBtn.showPass
+                                ? TextInput.Normal
+                                : TextInput.Password
+                            passwordCharacter: "•"
+                            color: root.textLight
+                            selectionColor: Qt.rgba(0.80, 0.65, 0.97, 0.35)
+                            font.pixelSize: 13; font.family: "Google Sans"
+                            verticalAlignment: TextInput.AlignVCenter
+                            clip: true
+
+                            Keys.onReturnPressed: connectBtn.doConnect()
+                            Keys.onEscapePressed: {
+                                root.wifiPassVisible = false
+                                root.wifiPassError = ""
+                            }
+                        }
+
+                        // Eye toggle button
+                        Rectangle {
+                            id: showPassBtn
+                            property bool showPass: false
+                            implicitWidth: 28; implicitHeight: 28; radius: 8
+                            color: eyeArea.containsMouse
+                                ? Qt.rgba(1,1,1,0.10) : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Image {
+                                id: eyeImg
+                                anchors.centerIn: parent
+                                width: 16; height: 16
+                                source: showPassBtn.showPass
+                                    ? "assets/icons/visibility.svg"
+                                    : "assets/icons/visibility-off.svg"
+                                sourceSize: Qt.size(16, 16)
+                                visible: false
+                            }
+                            ColorOverlay {
+                                anchors.fill: eyeImg
+                                source: eyeImg
+                                color: root.subtextLight
+                            }
+
+                            MouseArea {
+                                id: eyeArea; anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                                onClicked: showPassBtn.showPass = !showPassBtn.showPass
+                            }
+                        }
+                    }
+                }
+
+                // ── Error message ─────────────────────────────────────
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.bottomMargin: root.wifiPassError !== "" ? 12 : 0
+                    text: root.wifiPassError
+                    font.pixelSize: 11; font.family: "Google Sans"
+                    color: "#f38ba8"   // Catppuccin red
+                    visible: root.wifiPassError !== ""
+                    Behavior on Layout.bottomMargin { NumberAnimation { duration: 150 } }
+                }
+
+                // ── Connecting indicator ──────────────────────────────
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.bottomMargin: 12
+                    text: "Подключение…"
+                    font.pixelSize: 11; font.family: "Google Sans"
+                    color: root.activeColor
+                    visible: wifiPassProc.running
+                }
+
+                // ── Buttons row ───────────────────────────────────────
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    // Cancel
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 40; radius: 12
+                        color: cancelArea.containsMouse
+                            ? Qt.rgba(1,1,1,0.10) : root.inactiveColor
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Отмена"
+                            font.pixelSize: 13; font.family: "Google Sans"
+                            font.weight: Font.Medium
+                            color: root.textLight
+                        }
+                        MouseArea {
+                            id: cancelArea; anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                            onClicked: {
+                                root.wifiPassVisible = false
+                                root.wifiPassError   = ""
+                                wifiPassField.text   = ""
+                            }
+                        }
+                    }
+
+                    // Connect
+                    Rectangle {
+                        id: connectBtn
+                        function doConnect() {
+                            if (wifiPassField.text.length < 8) {
+                                root.wifiPassError = "Пароль должен быть не менее 8 символов"
+                                return
+                            }
+                            root.wifiPassError = ""
+                            wifiPassProc.command = [
+                                "nmcli", "dev", "wifi", "connect",
+                                root.wifiPassSsid,
+                                "password", wifiPassField.text
+                            ]
+                            wifiPassProc.running = true
+                        }
+
+                        Layout.fillWidth: true
+                        implicitHeight: 40; radius: 12
+                        color: connectArea.containsMouse
+                            ? Qt.lighter(root.activeColor, 1.12) : root.activeColor
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        opacity: wifiPassProc.running ? 0.55 : 1.0
+                        Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: wifiPassProc.running ? "…" : "Подключиться"
+                            font.pixelSize: 13; font.family: "Google Sans"
+                            font.weight: Font.SemiBold
+                            color: root.textDark
+                        }
+                        MouseArea {
+                            id: connectArea; anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor; hoverEnabled: true
+                            enabled: !wifiPassProc.running
+                            onClicked: connectBtn.doConnect()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
