@@ -1,2 +1,1 @@
-# google-dots
-# google-dots
+# -- god gave me divine intellect
