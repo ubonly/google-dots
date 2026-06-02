@@ -40,10 +40,18 @@ Item {
 
         onClicked: (event) => {
             if (!root.trayItem) return
+            
+            // Получаем координаты на экране для передачи приложению
+            var globalPos = mouse.mapToGlobal(event.x, event.y)
+            var x = globalPos.x
+            var y = globalPos.y
+
             if (event.button === Qt.LeftButton) {
-                root.trayItem.activate()
+                root.trayItem.activate(x, y)
+            } else if (event.button === Qt.RightButton) {
+                root.trayItem.contextMenu(x, y)
             } else {
-                root.trayItem.secondaryActivate()
+                root.trayItem.secondaryActivate(x, y)
             }
         }
     }

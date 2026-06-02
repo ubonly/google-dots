@@ -3,11 +3,42 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Services.SystemTray
+import Quickshell.Services.Notifications
 import Quickshell.Io
 import QtQuick
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 
 ShellRoot {
+
+    // ── Global notification server (must be a single instance) ─────────────
+    NotificationServer {
+        id: notifServer
+        actionsSupported:     false
+        bodySupported:        true
+        bodyMarkupSupported:  false
+        bodyImagesSupported:  false
+        imageSupported:       true
+        persistenceSupported: true
+        keepOnReload:         true
+
+        onNotification: function(notif) {
+            console.log("[notif] received:", notif.appName, "|", notif.summary, "|", notif.body)
+            notif.tracked = true
+            // Mirror into the notification center history (so it persists past the toast)
+            for (var i = 0; i < _notifCenters.length; i++) {
+                if (_notifCenters[i]) _notifCenters[i].pushNotification(notif)
+            }
+        }
+    }
+
+    property var _notifCenters: []
+    function toggleNotificationCenter() {
+        for (var i = 0; i < _notifCenters.length; i++) {
+            if (_notifCenters[i]) _notifCenters[i].isOpen = !_notifCenters[i].isOpen
+        }
+    }
+
 
     // ── Глобальный список лаунчеров (заполняется из Variants) ─────────────
     property var _launchers: []
@@ -115,7 +146,7 @@ ShellRoot {
                                 var c = arr[i]
                                 var id = c.workspace ? c.workspace.id : -1
                                 if (id > 0 && !m[id])
-                                    m[id] = (c["class"] || "").toLowerCase()
+                                    m[id] = c["class"] || ""
                             }
                             screenItem.clientsByWs = m
                         } catch(e) {}
@@ -162,6 +193,25 @@ ShellRoot {
                 screenRef: modelData
             }
 
+            // Media Popup
+            MediaPopup {
+                id: mediaPopupInst
+                screenRef: modelData
+            }
+
+            // Notifications stream (top-right)
+            NotificationsPopup {
+                id: notifPopupInst
+                screenRef: modelData
+                notificationsModel: notifServer.trackedNotifications.values
+            }
+
+            // Notification Center (bottom-right popup)
+            NotificationCenterPopup {
+                id: notifCenterInst
+                screenRef: modelData
+            }
+
             Component.onCompleted: {
                 var list = _launchers.slice()
                 list.push(appLauncherInst)
@@ -170,10 +220,14 @@ ShellRoot {
                 var clist = _captures.slice()
                 clist.push(screenCaptureInst)
                 _captures = clist
-                
+
                 var clipList = _clipboards.slice()
                 clipList.push(clipboardInst)
                 _clipboards = clipList
+
+                var ncList = _notifCenters.slice()
+                ncList.push(notifCenterInst)
+                _notifCenters = ncList
             }
             Component.onDestruction: {
                 var list = _launchers.slice()
@@ -185,17 +239,23 @@ ShellRoot {
                 var cidx = clist.indexOf(screenCaptureInst)
                 if (cidx >= 0) clist.splice(cidx, 1)
                 _captures = clist
-                
+
                 var clipList = _clipboards.slice()
                 var clipIdx = clipList.indexOf(clipboardInst)
                 if (clipIdx >= 0) clipList.splice(clipIdx, 1)
                 _clipboards = clipList
+
+                var ncList = _notifCenters.slice()
+                var ncIdx = ncList.indexOf(notifCenterInst)
+                if (ncIdx >= 0) ncList.splice(ncIdx, 1)
+                _notifCenters = ncList
             }
 
-            // ── Данные для мини-иконок в кнопке быстрых настроек ───────────
+            // ── Данные для мини-иконок ───────────────────────────────────
             property int  wifiBars: 0
             property bool btOn:     false
             property int  volume:   50
+            property string kbLayout: "US"
 
             Process {
                 id: wifiBarProc
@@ -235,94 +295,94 @@ ShellRoot {
             }
             Timer { interval: 3000; repeat: true; running: true; onTriggered: volBarProc.running = true }
 
+            // ── Keyboard layout detection ──────────────────────────────
+            Process {
+                id: kbProc
+                command: ["bash", "-c", "hyprctl devices -j 2>/dev/null | jq -r '.keyboards[0].active_keymap' 2>/dev/null"]
+                running: true
+                stdout: SplitParser {
+                    onRead: function(line) {
+                        var raw = line.trim()
+                        if (raw.toLowerCase().indexOf("russian") >= 0)       screenItem.kbLayout = "RU"
+                        else if (raw.toLowerCase().indexOf("english") >= 0)  screenItem.kbLayout = "US"
+                        else if (raw.toLowerCase().indexOf("german") >= 0)   screenItem.kbLayout = "DE"
+                        else if (raw.toLowerCase().indexOf("french") >= 0)   screenItem.kbLayout = "FR"
+                        else if (raw.toLowerCase().indexOf("spanish") >= 0)  screenItem.kbLayout = "ES"
+                        else if (raw.toLowerCase().indexOf("ukraine") >= 0)  screenItem.kbLayout = "UA"
+                        else if (raw.length > 0 && raw.length <= 3)          screenItem.kbLayout = raw.toUpperCase()
+                        else if (raw.length > 3)                             screenItem.kbLayout = raw.substring(0, 2).toUpperCase()
+                        else                                                  screenItem.kbLayout = "US"
+                    }
+                }
+            }
+            Timer { interval: 2000; repeat: true; running: true; onTriggered: kbProc.running = true }
+
             SystemClock {
                 id: clock
                 precision: SystemClock.Seconds
             }
 
+            Process {
+                id: kbSwitchProc
+                command: ["hyprctl", "switchxkblayout", "all", "next"]
+                running: false
+                onRunningChanged: {
+                    if (!running) kbProc.running = true
+                }
+            }
+
+            // ══════════════════════════════════════════════════════════════
+            //  CHROMEOS-STYLE BOTTOM BAR
+            // ══════════════════════════════════════════════════════════════
             PanelWindow {
                 screen: modelData
                 anchors { bottom: true; left: true; right: true }
-                implicitHeight: 70
-                
-                // ЭТО РЕШАЕТ КОНФЛИКТ С ОКНАМИ: мы резервируем высоту панели
-                exclusiveZone: 70 
+                implicitHeight: 48
+
+                // Резервируем высоту панели
+                exclusiveZone: 48
 
                 WlrLayershell.layer:     WlrLayer.Top
                 WlrLayershell.namespace: "quickshell-dock"
                 color: "transparent"
 
+                // ── Full-width bar background ──────────────────────────────
                 Rectangle {
-                    id: dockContainer
-                    anchors {
-                        bottom: parent.bottom; bottomMargin: 14
-                        horizontalCenter: parent.horizontalCenter
-                    }
-                    width:  dockRow.implicitWidth + 28
-                    height: 56; radius: 18
-                    color:        Qt.rgba(0.05, 0.07, 0.12, 0.60)
-                    border.color: Qt.rgba(1, 1, 1, 0.07); border.width: 1
+                    id: barBg
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: parent.height + 32
+                    radius: 32
+                    color: Qt.rgba(0.14, 0.14, 0.16, 0.95)
 
-                    RowLayout {
-                        id: dockRow
-                        anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: 14 }
-                        spacing: 2
-
-                        Repeater {
-                            model: 10
-                            WorkspaceAppButton {
-                                wsId: index + 1
-                                clientsByWs: screenItem.clientsByWs
-                            }
-                        }
-
-                        Loader {
-                            active: SystemTray.items.values && SystemTray.items.values.length > 0
-                            sourceComponent: Row {
-                                spacing: 0
-                                DockSeparator {}
-                                Repeater {
-                                    model: SystemTray.items
-                                    TrayIcon { trayItem: modelData }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    anchors { bottom: parent.bottom; bottomMargin: 12; horizontalCenter: parent.horizontalCenter }
-                    width: dockContainer.width * 0.55; height: 1
-                    color: Qt.rgba(0.30, 0.55, 1.0, 0.18); radius: 1
-                }
-
-                // ── Левый блок (Кнопка лаунчера + Часы) ─────────────
-                Row {
-                    anchors {
-                        left: parent.left; leftMargin: 16
-                        verticalCenter: dockContainer.verticalCenter
-                    }
-                    spacing: 12
-
-                    // Кнопка App Launcher
+                    // Subtle top border
                     Rectangle {
-                        id: launcherBtn
-                        width: 36; height: 36; radius: 18
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: (appLauncherInst && appLauncherInst.isOpen) || launcherBtnArea.containsMouse
-                            ? Qt.rgba(1, 1, 1, 0.14)
-                            : Qt.rgba(1, 1, 1, 0.07)
-                        border.color: Qt.rgba(1, 1, 1, 0.08)
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        anchors { top: parent.top; left: parent.left; right: parent.right }
+                        height: 1
+                        color: Qt.rgba(1, 1, 1, 0.05)
+                    }
+                }
 
-                        // ChromeOS-style "G" logo
-                        Text {
-                            anchors.centerIn: parent
-                            text: "G"
-                            font { pixelSize: 20; family: "Google Sans"; weight: Font.Bold }
-                            color: "white"
-                        }
+                // ── Far-left: G launcher button ────────────────────────────
+                Rectangle {
+                    id: launcherBtn
+                    anchors {
+                        left: parent.left; leftMargin: 12
+                        verticalCenter: parent.verticalCenter
+                    }
+                    width: 38; height: 38; radius: 19
+                    color: (appLauncherInst && appLauncherInst.isOpen) || launcherBtnArea.containsMouse
+                        ? Qt.rgba(1, 1, 1, 0.16)
+                        : Qt.rgba(1, 1, 1, 0.08)
+                    border.color: Qt.rgba(1, 1, 1, 0.06); border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "G"
+                        font { pixelSize: 18; family: "Google Sans"; weight: Font.Bold }
+                        color: Qt.rgba(1, 1, 1, 0.85)
+                    }
 
                         MouseArea {
                             id: launcherBtnArea
@@ -333,107 +393,240 @@ ShellRoot {
                         }
                     }
 
-                    // Часы
-                    Text {
-                        text:  Qt.formatDateTime(clock.date, "hh:mm")
-                        color: Qt.rgba(1, 1, 1, 0.92)
-                        font { pixelSize: 16; family: "Google Sans"; weight: Font.SemiBold }
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text:  Qt.formatDateTime(clock.date, "MMM d")
-                        color: Qt.rgba(1, 1, 1, 0.50)
-                        font { pixelSize: 13; family: "Google Sans"; weight: Font.Medium }
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
+                    // ── Center: Workspace buttons directly on the bar ──────────
+                    Row {
+                        id: dockRow
+                        anchors.centerIn: parent
+                        spacing: 0
 
-                // ── Правый блок (Пилюля быстрых настроек) ─────────────
-                Rectangle {
-                    id: qsBtn
-                    width:  qsRow.implicitWidth + 20
-                    height: 32
-                    radius: 16
-                    anchors {
-                        right: parent.right; rightMargin: 16
-                        verticalCenter: dockContainer.verticalCenter
-                    }
-
-                        color: qsBtnArea.containsMouse
-                            ? Qt.rgba(1, 1, 1, 0.14)
-                            : Qt.rgba(1, 1, 1, 0.07)
-                        border.color: Qt.rgba(1, 1, 1, 0.09)
-                        border.width: 1
-
-                        Behavior on color { ColorAnimation { duration: 130 } }
-
-                        Row {
-                            id: qsRow
-                            anchors.centerIn: parent
-                            spacing: 8
-
-                            // WiFi полоски
-                            Row {
-                                spacing: 2
-                                anchors.verticalCenter: parent.verticalCenter
-                                Repeater {
-                                    model: 4
-                                    Rectangle {
-                                        property int idx: index
-                                        width:  2.5
-                                        height: 6 + idx * 3
-                                        radius: 1.2
-                                        anchors.bottom: parent.bottom
-                                        color: (screenItem.wifiBars > idx)
-                                            ? Qt.rgba(1.0, 1.0, 1.0, 0.90)
-                                            : Qt.rgba(1.0, 1.0, 1.0, 0.22)
-                                        Behavior on color { ColorAnimation { duration: 300 } }
-                                    }
-                                }
-                            }
-
-                            // Bluetooth точка
-                            Rectangle {
-                                width: 6; height: 6; radius: 3
-                                anchors.verticalCenter: parent.verticalCenter
-                                color: screenItem.btOn
-                                    ? Qt.rgba(0.60, 0.72, 1.0, 1.0)
-                                    : Qt.rgba(1.0, 1.0, 1.0, 0.24)
-                                Behavior on color { ColorAnimation { duration: 300 } }
-                            }
-
-                            // Громкость
-                            Row {
-                                spacing: 4
-                                anchors.verticalCenter: parent.verticalCenter
-                                Text {
-                                    text: screenItem.volume <= 0 ? "🔇" : "🔊"
-                                    font.pixelSize: 11
-                                    color: Qt.rgba(1, 1, 1, 0.78)
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                Rectangle {
-                                    width: 24; height: 4; radius: 2
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    color: Qt.rgba(1, 1, 1, 0.14)
-                                    Rectangle {
-                                        width:  Math.max(2, parent.width * (screenItem.volume / 100))
-                                        height: parent.height; radius: parent.radius
-                                        color:  Qt.rgba(1, 1, 1, 0.82)
-                                        Behavior on width { NumberAnimation { duration: 180 } }
-                                    }
-                                }
+                        Repeater {
+                            model: 10
+                            WorkspaceAppButton {
+                                wsId: index + 1
+                                clientsByWs: screenItem.clientsByWs
                             }
                         }
 
+                        Loader {
+                            // Оставлено выключенным по просьбе пользователя
+                            active: false // SystemTray.items.values && SystemTray.items.values.length > 0
+                            sourceComponent: Row {
+                                spacing: 0
+                                DockSeparator {}
+                                Repeater {
+                                    model: SystemTray.items
+                                    TrayIcon { trayItem: modelData }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Right side: ChromeOS-style status area ─────────────────
+                    Row {
+                        id: rightArea
+                        anchors {
+                            right: parent.right; rightMargin: 12
+                            verticalCenter: parent.verticalCenter
+                        }
+                        spacing: 2
+
+                    // ── 0. Media Pill ────────────────────────────
+                    Rectangle {
+                        width: 38; height: 38; radius: 19
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: mediaPopupInst.isOpen ? Qt.rgba(0.7, 0.6, 1.0, 0.8) : (mediaArea.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08))
+                        border.color: Qt.rgba(1, 1, 1, 0.06); border.width: 1
+
+                        Image {
+                            id: mediaImg
+                            anchors.centerIn: parent
+                            width: 18; height: 18
+                            source: "assets/icons/music-note.svg"
+                            sourceSize: Qt.size(18, 18)
+                            smooth: true
+                            visible: false
+                        }
+                        ColorOverlay {
+                            anchors.fill: mediaImg
+                            source: mediaImg
+                            color: mediaPopupInst.isOpen ? Qt.rgba(0.1, 0.1, 0.1, 1.0) : Qt.rgba(1, 1, 1, 0.90)
+                        }
+
                         MouseArea {
-                            id: qsBtnArea
+                            id: mediaArea
                             anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape:  Qt.PointingHandCursor
+                            hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (qsPopupInst)
-                                    qsPopupInst.popupVisible = !qsPopupInst.popupVisible
+                                mediaPopupInst.isOpen = !mediaPopupInst.isOpen
+                            }
+                        }
+                    }
+
+                    // ── Combined status block: notifications | date | wifi+time ──
+                    Rectangle {
+                        id: combinedPill
+                        width: combinedRow.implicitWidth
+                        height: 38; radius: 19
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: Qt.rgba(1, 1, 1, 0.08)
+                        border.color: Qt.rgba(1, 1, 1, 0.06); border.width: 1
+                        clip: true
+
+                        Row {
+                            id: combinedRow
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 0
+
+                            // ── Notification section ──
+                            Item {
+                                id: notifSection
+                                visible: notifCenterInst.history.length > 0
+                                width: 42; height: 38
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    radius: height / 2
+                                    color: notifCenterInst.isOpen
+                                        ? Qt.rgba(0.7, 0.6, 1.0, 0.8)
+                                        : (notifBadgeArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent")
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: notifCenterInst.history.length
+                                    color: notifCenterInst.isOpen
+                                        ? Qt.rgba(0.1, 0.1, 0.1, 1.0)
+                                        : Qt.rgba(1, 1, 1, 0.95)
+                                    font { pixelSize: 13; family: "Google Sans"; weight: Font.Bold }
+                                }
+
+                                MouseArea {
+                                    id: notifBadgeArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                    onClicked: notifCenterInst.isOpen = !notifCenterInst.isOpen
+                                }
+                            }
+
+                            // Divider
+                            Item {
+                                visible: notifCenterInst.history.length > 0
+                                width: 2; height: 38
+                                Rectangle {
+                                    width: 2; height: 20
+                                    anchors.centerIn: parent
+                                    color: Qt.rgba(1, 1, 1, 0.20)
+                                }
+                            }
+
+                            // ── Date section ──
+                            Item {
+                                id: dateSection
+                                width: dateTxt.implicitWidth + 24; height: 38
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    radius: height / 2
+                                    color: dateArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+                                }
+
+                                Text {
+                                    id: dateTxt
+                                    anchors.centerIn: parent
+                                    text: Qt.formatDateTime(clock.date, "MMM d")
+                                    color: Qt.rgba(1, 1, 1, 0.90)
+                                    font { pixelSize: 13; family: "Google Sans"; weight: Font.Bold }
+                                }
+
+                                MouseArea {
+                                    id: dateArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (qsPopupInst)
+                                            qsPopupInst.popupVisible = !qsPopupInst.popupVisible
+                                    }
+                                }
+                            }
+
+                            // Divider
+                            Item {
+                                width: 2; height: 38
+                                Rectangle {
+                                    width: 2; height: 20
+                                    anchors.centerIn: parent
+                                    color: Qt.rgba(1, 1, 1, 0.20)
+                                }
+                            }
+
+                            // ── WiFi + Time section ──
+                            Item {
+                                id: statusSection
+                                width: wifiTimeRow.implicitWidth + 28; height: 38
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    radius: height / 2
+                                    color: qsPopupInst.popupVisible
+                                        ? Qt.rgba(0.7, 0.6, 1.0, 0.8)
+                                        : (statusArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent")
+                                }
+
+                                Row {
+                                    id: wifiTimeRow
+                                    anchors.centerIn: parent
+                                    spacing: 10
+
+                                    Item {
+                                        width: 18; height: 18
+                                        anchors.verticalCenter: parent.verticalCenter
+
+                                        Image {
+                                            id: dockWifiImg
+                                            anchors.fill: parent
+                                            source: {
+                                                if (screenItem.wifiBars <= 0) return "assets/icons/wifi-off.svg"
+                                                if (screenItem.wifiBars === 1) return "assets/icons/network-wifi-1-bar.svg"
+                                                if (screenItem.wifiBars === 2) return "assets/icons/network-wifi-2-bar.svg"
+                                                if (screenItem.wifiBars === 3) return "assets/icons/network-wifi-3-bar.svg"
+                                                return "assets/icons/signal-wifi-4-bar.svg"
+                                            }
+                                            sourceSize: Qt.size(18, 18)
+                                            smooth: true
+                                            visible: false
+                                        }
+                                        ColorOverlay {
+                                            anchors.fill: dockWifiImg
+                                            source: dockWifiImg
+                                            color: qsPopupInst.popupVisible
+                                                ? Qt.rgba(0.1, 0.1, 0.1, 1.0)
+                                                : Qt.rgba(1, 1, 1, 0.90)
+                                        }
+                                    }
+
+                                    Text {
+                                        id: timeTxt
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: Qt.formatDateTime(clock.date, "HH:mm")
+                                        color: qsPopupInst.popupVisible
+                                            ? Qt.rgba(0.1, 0.1, 0.1, 1.0)
+                                            : Qt.rgba(1, 1, 1, 0.95)
+                                        font { pixelSize: 13; family: "Google Sans"; weight: Font.Bold }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: statusArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (qsPopupInst)
+                                            qsPopupInst.popupVisible = !qsPopupInst.popupVisible
+                                    }
+                                }
                             }
                         }
                     }
@@ -441,3 +634,4 @@ ShellRoot {
             }
         }
     }
+}

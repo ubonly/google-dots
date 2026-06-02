@@ -5,42 +5,42 @@ import Quickshell.Io
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import Qt5Compat.GraphicalEffects
 
 PanelWindow {
     id: clipboardPopup
     property var screenRef
     property bool isOpen: false
-    
+
     screen: screenRef
-    
-    // Make it a full screen transparent overlay to easily center the popup
     anchors { top: true; bottom: true; left: true; right: true }
     exclusiveZone: -1
-    
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell-clipboard"
     WlrLayershell.keyboardFocus: isOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-    
     visible: isOpen
     color: "transparent"
-    
-    // Palette
-    readonly property color bgSolid:       Qt.rgba(0.08, 0.10, 0.15, 0.95)
-    readonly property color bgItemHover:   Qt.rgba(1, 1, 1, 0.08)
-    readonly property color textPrimary:   Qt.rgba(1, 1, 1, 0.92)
-    readonly property color textSecondary: Qt.rgba(1, 1, 1, 0.50)
-    readonly property color borderColor:   Qt.rgba(1, 1, 1, 0.08)
-    readonly property color accentColor:   Qt.rgba(0.40, 0.65, 1.0, 1.0)
-    
+
+    readonly property color bgSolid:       "#252535"
+    readonly property color bgItem:        "transparent"
+    readonly property color bgItemHover:   "#2e2e42"
+    readonly property color bgItemSelected:"#2e2e42"
+    readonly property color textPrimary:   "#cdd6f4"
+    readonly property color textSecondary: "#6c7086"
+    readonly property color borderColor:   "#313244"
+    readonly property color accentColor:   "#89b4fa"
+
     property var historyData: []
-    
+    property int selectedIndex: 0
+
     function toggle() {
         isOpen = !isOpen
         if (isOpen) {
+            selectedIndex = 0
             refreshProc.running = true
         }
     }
-    
+
     Process {
         id: refreshProc
         command: ["python3", "/home/ubonly/.config/quickshell/cliphist.py"]
@@ -48,221 +48,345 @@ PanelWindow {
             onRead: function(line) {
                 try {
                     clipboardPopup.historyData = JSON.parse(line)
-                } catch(e) {
-                    console.log("Error parsing cliphist JSON")
-                }
+                    clipboardPopup.selectedIndex = 0
+                } catch(e) {}
             }
         }
     }
-    
-    // Restore item
-    function restoreItem(id, type) {
-        var cmd = ""
-        if (type === "file") {
-            cmd = "echo '" + id + "' | cliphist decode | wl-copy --type text/uri-list"
-        } else {
-            cmd = "echo '" + id + "' | cliphist decode | wl-copy"
-        }
-        
+
+    function restoreItem(item) {
         var proc = Qt.createQmlObject('import Quickshell.Io; Process {}', clipboardPopup)
-        proc.command = ["bash", "-c", cmd]
+        if (item.pinned) {
+            proc.command = ["python3", "/home/ubonly/.config/quickshell/clipboard_pin.py", "restore", item.key]
+        } else {
+            proc.command = item.type === "file"
+                ? ["bash", "-c", "printf '%s' \"$1\" | cliphist decode | wl-copy --type text/uri-list", "--", item.line]
+                : ["bash", "-c", "printf '%s' \"$1\" | cliphist decode | wl-copy", "--", item.line]
+        }
         proc.running = true
         clipboardPopup.isOpen = false
     }
-    
-    // Delete item
-    function deleteItem(id) {
+
+    function deleteItem(item) {
+        if (item.pinned) {
+            var proc = Qt.createQmlObject('import Quickshell.Io; Process {}', clipboardPopup)
+            proc.command = ["python3", "/home/ubonly/.config/quickshell/clipboard_pin.py", "remove", item.key]
+            proc.running = true
+        } else {
+            var proc = Qt.createQmlObject('import Quickshell.Io; Process {}', clipboardPopup)
+            proc.command = ["bash", "-c", "printf '%s' \"$1\" | cliphist delete", "--", item.line]
+            proc.running = true
+        }
+        Qt.createQmlObject('import QtQuick; Timer { interval: 100; running: true; onTriggered: refreshProc.running = true }', clipboardPopup)
+    }
+
+    function togglePin(item) {
         var proc = Qt.createQmlObject('import Quickshell.Io; Process {}', clipboardPopup)
-        proc.command = ["bash", "-c", "echo '" + id + "' | cliphist delete"]
+        if (item.pinned) {
+            proc.command = ["python3", "/home/ubonly/.config/quickshell/clipboard_pin.py", "remove", item.key]
+        } else {
+            proc.command = ["python3", "/home/ubonly/.config/quickshell/clipboard_pin.py", "toggle", item.line]
+        }
         proc.running = true
-        // refresh slightly after deletion
-        var timer = Qt.createQmlObject('import QtQuick; Timer { interval: 100; running: true; onTriggered: refreshProc.running = true }', clipboardPopup)
+        Qt.createQmlObject('import QtQuick; Timer { interval: 120; running: true; onTriggered: refreshProc.running = true }', clipboardPopup)
     }
 
     Item {
         id: focusCatcher
         focus: clipboardPopup.isOpen
         Keys.onEscapePressed: clipboardPopup.isOpen = false
+        Keys.onUpPressed: {
+            if (clipboardPopup.selectedIndex > 0)
+                clipboardPopup.selectedIndex--
+            listView.positionViewAtIndex(clipboardPopup.selectedIndex, ListView.Contain)
+        }
+        Keys.onDownPressed: {
+            if (clipboardPopup.selectedIndex < clipboardPopup.historyData.length - 1)
+                clipboardPopup.selectedIndex++
+            listView.positionViewAtIndex(clipboardPopup.selectedIndex, ListView.Contain)
+        }
+        Keys.onReturnPressed: {
+            var item = clipboardPopup.historyData[clipboardPopup.selectedIndex]
+            if (item) clipboardPopup.restoreItem(item)
+        }
+        Keys.onDeletePressed: {
+            var item = clipboardPopup.historyData[clipboardPopup.selectedIndex]
+            if (item) clipboardPopup.deleteItem(item)
+        }
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_P) {
+                var item = clipboardPopup.historyData[clipboardPopup.selectedIndex]
+                if (item) clipboardPopup.togglePin(item)
+                event.accepted = true
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: clipboardPopup.isOpen = false
+        z: -1
     }
 
     Rectangle {
         id: container
         anchors.centerIn: parent
         width: 360
-        height: Math.min(500, Math.max(150, listContainer.implicitHeight + 80))
-        radius: 20
+        height: Math.min(520, headerItem.height + listContainer.implicitHeight + footerItem.height + 2)
+        radius: 14
         color: clipboardPopup.bgSolid
         border.color: clipboardPopup.borderColor
         border.width: 1
-        clip: true
-        
-        // Entrance animation
-        scale: clipboardPopup.isOpen ? 1.0 : 0.95
+
         opacity: clipboardPopup.isOpen ? 1.0 : 0.0
-        Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         ColumnLayout {
             anchors.fill: parent
             spacing: 0
-            
+
             // Header
             Item {
+                id: headerItem
                 Layout.fillWidth: true
-                Layout.preferredHeight: 50
-                
+                height: 50
+
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left
-                    anchors.leftMargin: 20
+                    anchors.leftMargin: 16
                     text: "Clipboard"
-                    font.family: "chillax"
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
+                    font.pixelSize: 16
+                    font.weight: Font.Medium
                     color: clipboardPopup.textPrimary
                 }
             }
-            
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: clipboardPopup.borderColor
+            }
+
             // List
             ScrollView {
                 id: listContainer
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
                 ListView {
                     id: listView
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 4
+                    spacing: 0
                     model: clipboardPopup.historyData
-                    
-                    delegate: Rectangle {
+                    clip: true
+                    topMargin: 6
+                    bottomMargin: 6
+
+                    delegate: Item {
                         width: listView.width
-                        height: modelData.type === "image" ? 100 : 64
-                        radius: 12
-                        color: mouseArea.containsMouse ? clipboardPopup.bgItemHover : "transparent"
-                        
+                        property bool isSelected: index === clipboardPopup.selectedIndex
+                        // image items are taller to show thumbnail
+                        height: modelData.type === "image" ? 110 : 52
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            radius: 8
+                            color: isSelected || mouseArea.containsMouse
+                                   ? clipboardPopup.bgItemSelected
+                                   : clipboardPopup.bgItem
+                        }
+
                         RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 12
-                            
-                            // Icon based on type
-                            Text {
-                                font.family: "Material Symbols Rounded"
-                                font.pixelSize: 20
-                                color: clipboardPopup.textSecondary
-                                text: {
-                                    if (modelData.type === "image") return "\ue3f4" // image
-                                    if (modelData.type === "file") return "\ue24d"  // file_copy
-                                    if (modelData.preview.startsWith("http")) return "\ue157" // link
-                                    return "\ue0b6" // notes/text
+                            anchors.leftMargin: 14
+                            anchors.rightMargin: 10
+                            anchors.topMargin: 6
+                            anchors.bottomMargin: 6
+                            spacing: 10
+
+                            // Type icon
+                            Item {
+                                Layout.alignment: Qt.AlignTop | Qt.AlignHCenter
+                                Layout.topMargin: 2
+                                width: 20; height: 20
+
+                                Image {
+                                    id: typeIconImg
+                                    anchors.fill: parent
+                                    source: modelData.type === "image"
+                                        ? "assets/icons/image-fill.svg"
+                                        : "assets/icons/match-case.svg"
+                                    sourceSize: Qt.size(40, 40)
+                                    visible: false
                                 }
-                                Layout.alignment: Qt.AlignVCenter
+                                ColorOverlay {
+                                    anchors.fill: typeIconImg
+                                    source: typeIconImg
+                                    color: clipboardPopup.textPrimary
+                                }
                             }
-                            
-                            // Content
+                            // Content area
                             Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                
-                                // Text/File preview
+
+                                // Image thumbnail
+                                Image {
+                                    id: thumbImg
+                                    anchors.fill: parent
+                                    visible: false
+                                    source: modelData.type === "image" ? modelData.imagePath : ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                }
+                                Rectangle {
+                                    id: thumbMask
+                                    anchors.fill: parent
+                                    radius: 8
+                                    visible: false
+                                    layer.enabled: true
+                                }
+                                OpacityMask {
+                                    anchors.fill: parent
+                                    visible: modelData.type === "image"
+                                    source: thumbImg
+                                    maskSource: thumbMask
+                                }
+
+                                // Text content
                                 ColumnLayout {
                                     anchors.fill: parent
                                     visible: modelData.type !== "image"
                                     spacing: 2
-                                    
+
                                     Text {
                                         Layout.fillWidth: true
                                         text: modelData.type === "file" ? modelData.filename : modelData.preview
-                                        font.family: "chillax"
-                                        font.pixelSize: 14
-                                        color: clipboardPopup.textPrimary
+                                        font.pixelSize: 13
+                                        color: modelData.preview && modelData.preview.startsWith("http")
+                                               ? clipboardPopup.accentColor
+                                               : clipboardPopup.textPrimary
                                         elide: Text.ElideRight
-                                        maximumLineCount: 2
-                                        wrapMode: Text.Wrap
+                                        maximumLineCount: 1
                                     }
-                                    
+
                                     Text {
-                                        visible: modelData.type === "file"
-                                        text: "File"
-                                        font.family: "chillax"
+                                        visible: isSelected
+                                        text: "Ctrl+V"
                                         font.pixelSize: 11
                                         color: clipboardPopup.textSecondary
                                     }
                                 }
-                                
-                                // Image thumbnail
-                                Rectangle {
-                                    anchors.fill: parent
-                                    visible: modelData.type === "image"
-                                    radius: 8
-                                    color: "transparent"
-                                    clip: true
-                                    
-                                    Image {
-                                        anchors.fill: parent
-                                        source: modelData.type === "image" ? modelData.imagePath : ""
-                                        fillMode: Image.PreserveAspectCrop
-                                        asynchronous: true
-                                    }
-                                }
-                            }
-                            
-                            // Delete Button
-                            Rectangle {
-                                width: 28; height: 28
-                                radius: 14
-                                color: delMouse.containsMouse ? Qt.rgba(1, 0, 0, 0.2) : "transparent"
-                                visible: mouseArea.containsMouse
-                                Layout.alignment: Qt.AlignVCenter
-                                
-                                Text {
-                                    anchors.centerIn: parent
-                                    font.family: "Material Symbols Rounded"
-                                    font.pixelSize: 18
-                                    color: delMouse.containsMouse ? "#ff5555" : clipboardPopup.textSecondary
-                                    text: "\ue5cd" // close
-                                }
-                                
-                                MouseArea {
-                                    id: delMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: clipboardPopup.deleteItem(modelData.id)
-                                }
                             }
                         }
-                        
+
                         MouseArea {
                             id: mouseArea
                             anchors.fill: parent
                             hoverEnabled: true
-                            // Don't trigger copy if clicking delete button
-                            onClicked: (mouse) => {
-                                // The delete button's MouseArea is above this one, 
-                                // so this won't fire if delete is clicked.
-                                clipboardPopup.restoreItem(modelData.id, modelData.type)
+                            onEntered: clipboardPopup.selectedIndex = index
+                            onClicked: clipboardPopup.restoreItem(modelData)
+                        }
+
+                        // Pin toggle button (top-right)
+                        Item {
+                            id: pinButton
+                            width: 24; height: 24
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            anchors.topMargin: 8
+                            anchors.rightMargin: 14
+                            z: 2
+                            visible: modelData.pinned || isSelected || mouseArea.containsMouse || pinHover.containsMouse
+
+                            Image {
+                                id: pinImg
+                                anchors.centerIn: parent
+                                width: 18; height: 18
+                                source: modelData.pinned
+                                    ? "assets/icons/keep-fill.svg"
+                                    : "assets/icons/keep.svg"
+                                sourceSize: Qt.size(36, 36)
+                                visible: false
                             }
-                            z: -1
+                            ColorOverlay {
+                                anchors.fill: pinImg
+                                source: pinImg
+                                color: modelData.pinned
+                                    ? clipboardPopup.accentColor
+                                    : clipboardPopup.textSecondary
+                            }
+
+                            MouseArea {
+                                id: pinHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: clipboardPopup.togglePin(modelData)
+                            }
                         }
                     }
                 }
             }
-            
-            // Empty state
-            Item {
+
+            Rectangle {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: clipboardPopup.historyData.length === 0
-                
-                Text {
-                    anchors.centerIn: parent
-                    text: "No items in clipboard"
-                    font.family: "chillax"
-                    font.pixelSize: 14
-                    color: clipboardPopup.textSecondary
+                height: 1
+                color: clipboardPopup.borderColor
+            }
+
+            // Footer
+            Item {
+                id: footerItem
+                Layout.fillWidth: true
+                height: 52
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    radius: 8
+                    color: Qt.rgba(1, 1, 1, 0.04)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 8
+
+                        Item {
+                            Layout.alignment: Qt.AlignVCenter
+                            width: 18; height: 18
+
+                            Image {
+                                id: footerIconImg
+                                anchors.fill: parent
+                                source: "assets/icons/help.svg"
+                                sourceSize: Qt.size(36, 36)
+                                visible: false
+                            }
+                            ColorOverlay {
+                                anchors.fill: footerIconImg
+                                source: footerIconImg
+                                color: clipboardPopup.textPrimary
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: clipboardPopup.historyData.length === 0
+                                  ? "No items in clipboard history."
+                                  : "Select an item to paste it. You can see the clipboard by pressing Launcher ⊞ + v."
+                            font.pixelSize: 12
+                            color: clipboardPopup.textSecondary
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 2
+                        }
+                    }
                 }
             }
         }

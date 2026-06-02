@@ -18,8 +18,25 @@ PanelWindow {
     WlrLayershell.namespace: "quickshell-launcher"
     WlrLayershell.keyboardFocus: isOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    visible: isOpen
+    // Keep window alive during close animation
+    property bool _animVisible: false
+    visible: _animVisible
     color: "transparent"
+
+    onIsOpenChanged: {
+        if (isOpen) {
+            _animVisible = true
+        } else {
+            closeTimer.start()
+        }
+    }
+
+    Timer {
+        id: closeTimer
+        interval: 160  // slightly longer than close animation (150ms)
+        repeat: false
+        onTriggered: launcher._animVisible = false
+    }
 
     // ── Palette ────────────────────────────────────────────────────────────
     readonly property color bgTint:       Qt.rgba(0.11, 0.12, 0.18, 0.96)
@@ -28,6 +45,115 @@ PanelWindow {
     readonly property color textPrimary:  Qt.rgba(1, 1, 1, 0.92)
     readonly property color textSecondary:Qt.rgba(1, 1, 1, 0.45)
     readonly property color hoverBg:      Qt.rgba(1, 1, 1, 0.07)
+
+    // ── Recent apps ───────────────────────────────────────────────────────
+    property var recentApps: []
+    property string _recentBuf: ""
+    readonly property string recentFile: Qt.resolvedUrl("recent-apps.json").toString().replace("file://", "")
+
+    Process {
+        id: recentReadProc
+        command: ["python3", "-c",
+            "import json,sys; f=open('" + launcher.recentFile + "'); print(f.read()); f.close()"]
+        running: false
+        stdout: SplitParser {
+            onRead: function(line) { launcher._recentBuf += line }
+        }
+        onRunningChanged: {
+            if (!running && launcher._recentBuf.length > 1) {
+                try { launcher.recentApps = JSON.parse(launcher._recentBuf) } catch(e) {}
+                launcher._recentBuf = ""
+            } else if (running) {
+                launcher._recentBuf = ""
+            }
+        }
+    }
+
+    Process {
+        id: saveProc
+        property string dataToWrite: ""
+        command: ["python3", "-c",
+            "import sys; open('" + launcher.recentFile + "','w').write('" + JSON.stringify(launcher.recentApps).replace(/'/g, "\\'") + "')"]
+        running: false
+    }
+
+    function addToRecent(app) {
+        var list = launcher.recentApps.slice()
+        // Remove existing entry for same app
+        for (var i = list.length - 1; i >= 0; i--) {
+            if (list[i].exec === app.exec) list.splice(i, 1)
+        }
+        list.unshift(app)
+        if (list.length > 5) list = list.slice(0, 5)
+        launcher.recentApps = list
+        // Save to file — rebuild command with fresh data
+        var jsonStr = JSON.stringify(list).replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+        saveProc.command = ["python3", "-c",
+            "open('" + launcher.recentFile + "','w').write('" + jsonStr + "')"]
+        saveProc.running = true
+    }
+
+    Process {
+        id: hyprSocketProc
+        command: [
+            "python3", "-c",
+            "import socket, os, sys\n" +
+            "path = f\"{os.environ.get('XDG_RUNTIME_DIR','')}/hypr/{os.environ.get('HYPRLAND_INSTANCE_SIGNATURE','')}/.socket2.sock\"\n" +
+            "try:\n" +
+            "  with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:\n" +
+            "    s.connect(path)\n" +
+            "    while True:\n" +
+            "      data = s.recv(4096)\n" +
+            "      if not data: break\n" +
+            "      for line in data.decode().split('\\n'):\n" +
+            "        if line.startswith('activewindow>>'):\n" +
+            "          print(line.split('>>')[1].split(',')[0], flush=True)\n" +
+            "except Exception as e: pass"
+        ]
+        running: true
+        stdout: SplitParser {
+            onRead: function(line) {
+                if (line.length > 0) {
+                    launcher.trackExternalLaunch(line)
+                }
+            }
+        }
+    }
+
+    function trackExternalLaunch(cls) {
+        if (!cls || launcher.allApps.length === 0) return;
+        var low = cls.toLowerCase();
+        var shr = cls.split('.').pop().toLowerCase();
+        
+        var aliases = {
+            "zen": "zen-browser",
+            "navigator": "firefox",
+            "code": "code-oss",
+            "nautilus": "org.gnome.nautilus"
+        };
+        var target = aliases[low] || aliases[cls] || shr;
+        
+        // Find best match
+        for (var i = 0; i < launcher.allApps.length; i++) {
+            var app = launcher.allApps[i];
+            var appIcon = (app.icon || "").toLowerCase();
+            var appName = (app.name || "").toLowerCase();
+            var execBase = app.exec.split(' ')[0].split('/').pop().toLowerCase();
+            
+            if (appIcon === target || appIcon === low || 
+                execBase === target || execBase === low || 
+                appName === target || appName === low) {
+                
+                // Only add if it's not already the very first recent app
+                // (prevents rapid firing on focus changes)
+                if (launcher.recentApps.length > 0 && launcher.recentApps[0].exec === app.exec) {
+                    return;
+                }
+                launcher.addToRecent(app);
+                break;
+            }
+        }
+    }
 
     // ── App loading ───────────────────────────────────────────────────────
     property var allApps: []
@@ -58,7 +184,10 @@ PanelWindow {
         }
     }
 
-    Component.onCompleted: listProc.running = true
+    Component.onCompleted: {
+        listProc.running = true
+        recentReadProc.running = true
+    }
 
     function filterApps() {
         if (searchText === "") {
@@ -83,10 +212,18 @@ PanelWindow {
             searchInput.text = ""
             searchInput.forceActiveFocus()
             listProc.running = true
+            recentReadProc.running = true  // refresh recent apps on open
         }
     }
 
     function launchApp(cmd) {
+        // Find app by exec and add to recent
+        for (var i = 0; i < launcher.allApps.length; i++) {
+            if (launcher.allApps[i].exec === cmd) {
+                launcher.addToRecent(launcher.allApps[i])
+                break
+            }
+        }
         Hyprland.dispatch("exec " + cmd)
         isOpen = false
     }
@@ -107,11 +244,12 @@ PanelWindow {
         id: popupWindow
         width: 640
         height: Math.min(760, parent.height - 120)
+
         anchors {
             left: parent.left
             leftMargin: 16
             bottom: parent.bottom
-            bottomMargin: 86
+            bottomMargin: 64
         }
         color: launcher.bgTint
         radius: 24
@@ -119,26 +257,63 @@ PanelWindow {
         border.width: 1
         clip: true
 
-        // Entrance animation
-        opacity: launcher.isOpen ? 1.0 : 0.0
-        scale:   launcher.isOpen ? 1.0 : 0.96
-        transformOrigin: Item.BottomLeft
-        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-        Behavior on scale   { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        // Translate for slide animation
+        transform: Translate {
+            id: launcherTranslate
+            y: 40
+        }
+
+        // Start hidden
+        opacity: 0
+
+        states: [
+            State {
+                name: "visible"
+                when: launcher.isOpen
+                PropertyChanges { target: popupWindow;       opacity: 1.0 }
+                PropertyChanges { target: launcherTranslate; y: 0 }
+            },
+            State {
+                name: "hidden"
+                when: !launcher.isOpen
+                PropertyChanges { target: popupWindow;       opacity: 0 }
+                PropertyChanges { target: launcherTranslate; y: 40 }
+            }
+        ]
+
+        transitions: [
+            Transition {
+                from: "hidden"; to: "visible"
+                NumberAnimation {
+                    properties: "opacity, y"
+                    duration: 150
+                    easing.type: Easing.OutCubic
+                }
+            },
+            Transition {
+                from: "visible"; to: "hidden"
+                NumberAnimation {
+                    properties: "opacity, y"
+                    duration: 150
+                    easing.type: Easing.InCubic
+                }
+            }
+        ]
 
         // Block clicks from dismissing
         MouseArea { anchors.fill: parent; onClicked: {} }
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 24
-            spacing: 0
+        // Explicit anchor-based layout: prevents any chance of the
+        // Recently-used row moving when the grid scrolls.
 
             // ── Search bar ────────────────────────────────────────────
             Rectangle {
-                Layout.fillWidth: true
-                Layout.maximumWidth: 720
-                Layout.alignment: Qt.AlignHCenter
+                id: searchBar
+                anchors {
+                    top: parent.top; topMargin: 24
+                    left: parent.left; leftMargin: 24
+                    right: parent.right; rightMargin: 24
+                }
                 height: 48
                 radius: 24
                 color: launcher.searchBg
@@ -223,30 +398,166 @@ PanelWindow {
                 }
             }
 
-            Item { Layout.preferredHeight: 12 }
-
-            // ── App grid ──────────────────────────────────────────────
+            // ── App grid (scrollable area — Recently used scrolls with it) ──
             Flickable {
-                Layout.fillWidth:  true
-                Layout.fillHeight: true
-                contentHeight: appGrid.height
+                id: appScroll
+                anchors {
+                    top: searchBar.bottom; topMargin: 12
+                    left: parent.left; leftMargin: 24
+                    right: parent.right; rightMargin: 24
+                    bottom: parent.bottom; bottomMargin: 24
+                }
+                contentWidth: width
+                contentHeight: scrollContent.height
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
 
-                GridLayout {
-                    id: appGrid
-                    width: parent.width
-                    columns: 5
-                    columnSpacing: 4
-                    rowSpacing: 4
+                readonly property int rowHeight: 110 + appGrid.rowSpacing
+
+                function ensureActiveVisible() {
+                    if (launcher.filteredApps.length === 0) return
+                    var row = Math.floor(launcher.activeIndex / appGrid.columns)
+                    var rowY = appGrid.y + row * rowHeight
+                    var target = contentY
+                    if (rowY < contentY) {
+                        target = rowY
+                    } else if (rowY + rowHeight > contentY + height) {
+                        target = rowY + rowHeight - height
+                    }
+                    target = Math.max(0, Math.min(target, Math.max(0, contentHeight - height)))
+                    if (target !== contentY) { contentY = target }
+                }
+
+                Item {
+                    id: scrollContent
+                    width: appScroll.width
+                    height: recentSection.height + (recentSection.visible ? 4 : 0) + appGrid.height
+
+                    // ── Recent apps (scrolls together with the grid) ──
+                    Item {
+                        id: recentSection
+                        anchors { top: parent.top; left: parent.left; right: parent.right }
+                        height: visible ? (recentLabel.height + 8 + recentRow.height + 16) : 0
+                        visible: launcher.searchText === "" && launcher.recentApps.length > 0
+
+                        opacity: visible ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+
+                        Text {
+                            id: recentLabel
+                            anchors { top: parent.top; left: parent.left }
+                            text: "Recently used"
+                            color: Qt.rgba(1, 1, 1, 0.45)
+                            font { pixelSize: 11; family: "Google Sans"; weight: Font.Medium; letterSpacing: 0.5 }
+                        }
+
+                        Row {
+                            id: recentRow
+                            anchors { top: recentLabel.bottom; topMargin: 8; left: parent.left; right: parent.right }
+                            spacing: 4
+
+                            Repeater {
+                                model: launcher.recentApps
+
+                                Item {
+                                    id: recentCell
+                                    property var rapp: launcher.recentApps[index]
+
+                                    width: (recentRow.width - 4 * 4) / 5
+                                    height: 110
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 16
+                                        color: recentMouse.containsMouse ? launcher.hoverBg : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                    }
+
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 8
+
+                                        Item {
+                                            width: 56; height: 56
+                                            anchors.horizontalCenter: parent.horizontalCenter
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 28
+                                                color: Qt.rgba(1, 1, 1, 0.06)
+                                                visible: recentIcon.status !== Image.Ready
+                                            }
+
+                                            Image {
+                                                id: recentIcon
+                                                anchors.centerIn: parent
+                                                width: 44; height: 44
+                                                sourceSize.width: 44
+                                                sourceSize.height: 44
+                                                source: {
+                                                    if (!recentCell.rapp) return "image://icon/application-x-executable";
+                                                    var path = recentCell.rapp.iconPath;
+                                                    if (path && path.length > 0) return "file://" + path;
+                                                    var icon = recentCell.rapp.icon || "application-x-executable";
+                                                    if (icon.startsWith("/")) return "file://" + icon;
+                                                    return "image://icon/" + icon;
+                                                }
+                                                asynchronous: true
+                                                cache: true
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                        }
+
+                                        Text {
+                                            width: Math.min(100, recentCell.width - 12)
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: recentCell.rapp ? recentCell.rapp.name : ""
+                                            color: launcher.textPrimary
+                                            font { pixelSize: 11; family: "Google Sans" }
+                                            elide: Text.ElideRight
+                                            maximumLineCount: 2
+                                            wrapMode: Text.Wrap
+                                            horizontalAlignment: Text.AlignHCenter
+                                            lineHeight: 1.15
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: recentMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: launcher.launchApp(recentCell.rapp.exec)
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            anchors { top: recentRow.bottom; topMargin: 12; left: parent.left; right: parent.right }
+                            height: 1
+                            color: Qt.rgba(1, 1, 1, 0.06)
+                        }
+                    }
+
+                    Grid {
+                        id: appGrid
+                        anchors {
+                            top: recentSection.visible ? recentSection.bottom : parent.top
+                            topMargin: recentSection.visible ? 4 : 0
+                            left: parent.left; right: parent.right
+                        }
+                        columns: 5
+                        spacing: 4
+                        readonly property int rowSpacing: spacing
 
                     Repeater {
                         model: launcher.filteredApps
 
                         Item {
                             id: cell
-                            Layout.preferredWidth:  (appGrid.width - (appGrid.columns - 1) * 4) / appGrid.columns
-                            Layout.preferredHeight: 110
+                            width: (appGrid.width - (appGrid.columns - 1) * appGrid.spacing) / appGrid.columns
+                            height: 110
 
                             property var app: launcher.filteredApps[index]
 
@@ -258,7 +569,6 @@ PanelWindow {
                                        ? launcher.hoverBg : "transparent"
                                 border.color: (index === launcher.activeIndex) ? Qt.rgba(1, 1, 1, 0.15) : "transparent"
                                 border.width: 1
-                                Behavior on color { ColorAnimation { duration: 100 } }
                             }
 
                             Column {
@@ -281,17 +591,21 @@ PanelWindow {
                                         id: appIcon
                                         anchors.centerIn: parent
                                         width: 44; height: 44
-                                        source: "image://icon/" + cell.app.icon
-                                        smooth: true; mipmap: true
-                                        fillMode: Image.PreserveAspectFit
-                                        scale: cellMouse.containsMouse ? 1.06 : 1.0
-                                        Behavior on scale {
-                                            NumberAnimation {
-                                                duration: 150
-                                                easing.type: Easing.OutBack
-                                                easing.overshoot: 1.4
-                                            }
+                                        sourceSize.width: 44
+                                        sourceSize.height: 44
+
+                                        source: {
+                                            if (!cell.app) return "image://icon/application-x-executable";
+                                            var path = cell.app.iconPath;
+                                            if (path && path.length > 0) return "file://" + path;
+                                            var icon = cell.app.icon || "application-x-executable";
+                                            if (icon.startsWith("/")) return "file://" + icon;
+                                            return "image://icon/" + icon;
                                         }
+
+                                        asynchronous: true
+                                        cache: true
+                                        fillMode: Image.PreserveAspectFit
                                     }
                                 }
 
@@ -320,7 +634,15 @@ PanelWindow {
                         }
                     }
                 }
+                }
             }
+
+
+
+        Connections {
+            target: launcher
+            function onActiveIndexChanged() { appScroll.ensureActiveVisible() }
+            function onFilteredAppsChanged() { appScroll.contentY = 0 }
         }
     }
 }

@@ -27,7 +27,7 @@ Item {
                ? Qt.rgba(1, 1, 1, 0.15)
                : (mouseArea.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
 
-        Behavior on color { ColorAnimation { duration: 100 } }
+
 
         // ── Иконка из системной темы ─────────────────────────────────────
         Image {
@@ -44,15 +44,9 @@ Item {
             mipmap:       true
             fillMode:     Image.PreserveAspectFit
 
-            // Анимация масштаба при наведении
-            scale: mouseArea.containsMouse ? 1.14 : 1.0
-            Behavior on scale {
-                NumberAnimation { duration: 160; easing.type: Easing.OutBack; easing.overshoot: 1.5 }
-            }
 
-            // Небольшая прозрачность иконки в покое → насыщенность при наведении
-            opacity: mouseArea.containsMouse ? 1.0 : 0.88
-            Behavior on opacity { NumberAnimation { duration: 120 } }
+
+
         }
 
         // ── Точка "приложение запущено" ──────────────────────────────────
@@ -88,7 +82,7 @@ Item {
         border.width: 1
 
         opacity: mouseArea.containsMouse ? 1.0 : 0.0
-        Behavior on opacity { NumberAnimation { duration: 160 } }
+
 
         // Не перекрываем соседние элементы
         z: 10

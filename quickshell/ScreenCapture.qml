@@ -5,6 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 
 PanelWindow {
     id: capture
@@ -53,16 +54,16 @@ PanelWindow {
 
     // ── Commands ──────────────────────────────────────────────────────────
     function getCommand() {
-        var pre = "sleep 0.2; mkdir -p ~/Pictures ~/Videos; "
+        var pre = "sleep 0.2; mkdir -p \"$HOME/Pictures\" \"$HOME/Videos\"; "
         var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
         if (captureType === "screenshot") {
-            var pic = "~/Pictures/Screenshot_" + ts + ".png"
-            if (captureMode === "fullscreen") return pre + "grim -o \"" + capture.screenRef.name + "\" " + pic + "; wl-copy < " + pic
-            if (captureMode === "window")     return pre + "hyprshot -m window --clipboard-only"
+            var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
+            if (captureMode === "fullscreen") return pre + "grim -o \"" + capture.screenRef.name + "\" \"" + pic + "\" && setsid -f wl-copy --type image/png < \"" + pic + "\""
+            if (captureMode === "window")     return "sleep 0.35; mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
         } else {
-            var vid = "~/Videos/Screenrecord_" + ts + ".mp4"
-            if (captureMode === "fullscreen") return pre + "wl-screenrec -o \"" + capture.screenRef.name + "\" -f " + vid
-            if (captureMode === "window")     return pre + "wl-screenrec -f " + vid
+            var vid = "$HOME/Videos/Screenrecord_" + ts + ".mp4"
+            if (captureMode === "fullscreen") return pre + "wl-screenrec -o \"" + capture.screenRef.name + "\" -f \"" + vid + "\""
+            if (captureMode === "window")     return pre + "wl-screenrec -f \"" + vid + "\""
         }
         return pre + "hyprshot -m region"
     }
@@ -95,20 +96,32 @@ PanelWindow {
         var absW = Math.round(capture.selW)
         var absH = Math.round(capture.selH)
         var geometry = absX + "," + absY + " " + absW + "x" + absH
-        
-        var pre = "sleep 0.2; mkdir -p ~/Pictures ~/Videos; "
+
         var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
         var cmd = ""
         if (captureType === "screenshot") {
-            var pic = "~/Pictures/Screenshot_" + ts + ".png"
-            cmd = pre + "grim -g \"" + geometry + "\" " + pic + "; wl-copy < " + pic
+            var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
+            cmd = "mkdir -p \"$HOME/Pictures\"; "
+                + "grim -g \"" + geometry + "\" \"" + pic + "\" && "
+                + "setsid -f wl-copy --type image/png < \"" + pic + "\""
         } else {
-            cmd = pre + "wl-screenrec -g \"" + geometry + "\" -f ~/Videos/Screenrecord_" + ts + ".mp4"
+            cmd = "mkdir -p \"$HOME/Videos\"; wl-screenrec -g \"" + geometry + "\" -f \"$HOME/Videos/Screenrecord_" + ts + ".mp4\""
         }
-        
+
         capture.isOpen = false
-        captureProc.command = ["bash", "-c", cmd]
-        captureProc.running = true
+        regionCaptureCmd = cmd
+        regionCaptureDelay.start()
+    }
+
+    property string regionCaptureCmd: ""
+    Timer {
+        id: regionCaptureDelay
+        interval: 60
+        repeat: false
+        onTriggered: {
+            captureProc.command = ["bash", "-c", capture.regionCaptureCmd]
+            captureProc.running = true
+        }
     }
 
     function openRegionImmediate() {
@@ -137,8 +150,8 @@ PanelWindow {
     Item {
         id: focusCatcher
         focus: capture.isOpen
-        Keys.onReturnPressed: capture.doCapture(capture.captureMode === "fullscreen")
-        Keys.onEnterPressed: capture.doCapture(capture.captureMode === "fullscreen")
+        Keys.onReturnPressed: capture.doCapture(true)
+        Keys.onEnterPressed: capture.doCapture(true)
         Keys.onEscapePressed: capture.isOpen = false
     }
 
@@ -232,10 +245,7 @@ PanelWindow {
 
             // Entrance animation
             opacity: (capture.isOpen && capture.captureMode !== "region") ? 1.0 : 0.0
-            scale: (capture.isOpen && capture.captureMode !== "region") ? 1.0 : 0.92
             transformOrigin: Item.Bottom
-            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
             Row {
                 id: captureButtonRow
@@ -243,11 +253,20 @@ PanelWindow {
                 spacing: 8
 
                 Image {
+                    id: captureBtnIcon
                     width: 18; height: 18
                     anchors.verticalCenter: parent.verticalCenter
                     source: capture.captureType === "screenshot"
                         ? "assets/icons/screenshot.svg"
                         : "assets/icons/screen-record.svg"
+                    sourceSize: Qt.size(18, 18)
+                    visible: false
+                }
+                ColorOverlay {
+                    width: 18; height: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    source: captureBtnIcon
+                    color: capture.textPrimary
                 }
 
                 Text {
@@ -263,7 +282,7 @@ PanelWindow {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: capture.doCapture(capture.captureMode === "fullscreen")
+                onClicked: capture.doCapture(true)
             }
         }
 
@@ -280,10 +299,7 @@ PanelWindow {
 
             // Entrance animation
             opacity: capture.isOpen ? 1.0 : 0.0
-            scale: capture.isOpen ? 1.0 : 0.92
             transformOrigin: Item.Bottom
-            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
             // Block clicks from dismissing
             MouseArea { anchors.fill: parent; onClicked: {} }
@@ -305,10 +321,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: screenshotIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/screenshot.svg"
-                        opacity: capture.captureType === "screenshot" ? 1.0 : 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: screenshotIcon
+                        color: Qt.rgba(1, 1, 1, capture.captureType === "screenshot" ? 1.0 : 0.6)
                     }
 
                     MouseArea {
@@ -331,10 +355,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: recordIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/screen-record.svg"
-                        opacity: capture.captureType === "record" ? 1.0 : 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: recordIcon
+                        color: Qt.rgba(1, 1, 1, capture.captureType === "record" ? 1.0 : 0.6)
                     }
 
                     MouseArea {
@@ -366,10 +398,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: fullscreenIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/fullscreen.svg"
-                        opacity: capture.captureMode === "fullscreen" ? 1.0 : 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: fullscreenIcon
+                        color: Qt.rgba(1, 1, 1, capture.captureMode === "fullscreen" ? 1.0 : 0.6)
                     }
 
                     MouseArea {
@@ -392,10 +432,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: regionIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/crop-region.svg"
-                        opacity: capture.captureMode === "region" ? 1.0 : 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: regionIcon
+                        color: Qt.rgba(1, 1, 1, capture.captureMode === "region" ? 1.0 : 0.6)
                     }
 
                     MouseArea {
@@ -418,10 +466,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: windowIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/window-capture.svg"
-                        opacity: capture.captureMode === "window" ? 1.0 : 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: windowIcon
+                        color: Qt.rgba(1, 1, 1, capture.captureMode === "window" ? 1.0 : 0.6)
                     }
 
                     MouseArea {
@@ -449,10 +505,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: settingsIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/settings.svg"
-                        opacity: 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: settingsIcon
+                        color: Qt.rgba(1, 1, 1, 0.6)
                     }
 
                     MouseArea {
@@ -471,10 +535,18 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
+                        id: closeIcon
                         anchors.centerIn: parent
                         width: 20; height: 20
                         source: "assets/icons/close.svg"
-                        opacity: closeArea.containsMouse ? 1.0 : 0.6
+                        sourceSize: Qt.size(20, 20)
+                        visible: false
+                    }
+                    ColorOverlay {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        source: closeIcon
+                        color: closeArea.containsMouse ? Qt.rgba(1, 0.5, 0.5, 1.0) : Qt.rgba(1, 1, 1, 0.6)
                     }
 
                     MouseArea {

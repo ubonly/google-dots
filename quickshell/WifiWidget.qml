@@ -66,28 +66,24 @@ Item {
             width:  3; height: 5; radius: 1.5
             anchors.bottom: parent.bottom
             color: root.bars >= 1 ? root.activeColor : root.inactiveColor
-            Behavior on color { ColorAnimation { duration: 400 } }
         }
         // Полоска 2
         Rectangle {
             width:  3; height: 9; radius: 1.5
             anchors.bottom: parent.bottom
             color: root.bars >= 2 ? root.activeColor : root.inactiveColor
-            Behavior on color { ColorAnimation { duration: 400 } }
         }
         // Полоска 3
         Rectangle {
             width:  3; height: 13; radius: 1.5
             anchors.bottom: parent.bottom
             color: root.bars >= 3 ? root.activeColor : root.inactiveColor
-            Behavior on color { ColorAnimation { duration: 400 } }
         }
         // Полоска 4 (самая высокая)
         Rectangle {
             width:  3; height: 17; radius: 1.5
             anchors.bottom: parent.bottom
             color: root.bars >= 4 ? root.activeColor : root.inactiveColor
-            Behavior on color { ColorAnimation { duration: 400 } }
         }
     }
 }

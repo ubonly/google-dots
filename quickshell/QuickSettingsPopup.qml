@@ -77,11 +77,16 @@ PanelWindow {
     // ══════════════════════════════════════════════════════════════════════
     //  STATE
     // ══════════════════════════════════════════════════════════════════════
-    property string wifiName:   "..."
-    property int    wifiSignal: -1
-    property bool   wifiOn:     false
-    property bool   btOn:       false
-    property int    volume:     50
+    property string wifiName:        "..."
+    property int    wifiSignal:      -1
+    property bool   wifiRadioOn:     false   // is the wifi radio enabled
+    property bool   wifiConnected:   false   // is there an active wifi connection
+    property bool   wifiHasInternet: true    // does the connection have internet
+    // Convenience: legacy compat — "wifiOn" means radio is enabled
+    property bool   wifiOn:          wifiRadioOn
+    property bool   btOn:            false
+    property bool   dndOn:           false
+    property int    volume:          50
 
     // ── Wi-Fi password popup state ──────────────────────────────────────────
     property bool   wifiPassVisible: false
@@ -101,20 +106,76 @@ PanelWindow {
         if (s < 65) return "Medium"; return "Strong"
     }
 
+    // Helper: pick the right wifi icon asset for current state
+    function wifiIcon() {
+        if (!wifiRadioOn)    return "assets/icons/wifi-off.svg"
+        if (!wifiConnected)  return "assets/icons/signal-wifi-statusbar-not-connected.svg"
+        if (!wifiHasInternet) return "assets/icons/signal-wifi-statusbar-not-connected.svg"
+        if (wifiSignal >= 75) return "assets/icons/signal-wifi-4-bar.svg"
+        if (wifiSignal >= 50) return "assets/icons/network-wifi-3-bar.svg"
+        if (wifiSignal >= 25) return "assets/icons/network-wifi-2-bar.svg"
+        return "assets/icons/network-wifi-1-bar.svg"
+    }
+
+    // Helper: subtitle text for the wifi tile
+    function wifiSubtitle() {
+        if (!wifiRadioOn)    return "Off"
+        if (!wifiConnected)  return "Not connected"
+        if (!wifiHasInternet) return "No internet"
+        return sigLabel(wifiSignal)
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     //  PROCESSES
     // ══════════════════════════════════════════════════════════════════════
+    // Comprehensive wifi status: radio state, active connection, connectivity
+    property string _wifiStatusBuf: ""
     Process { id: wifiProc; running: false
-        command: ["bash","-c","nmcli -t -f ACTIVE,SSID,SIGNAL dev wifi 2>/dev/null | awk -F: '/^yes/{print $2\"|\"$3;exit}'"]
-        stdout: SplitParser { onRead: function(l){
-            var p=l.trim().split("|")
-            if(p.length>=1&&p[0]!==""){root.wifiName=p[0];root.wifiSignal=parseInt(p[1])||50;root.wifiOn=true}
-            else{root.wifiName="Wi-Fi";root.wifiSignal=-1;root.wifiOn=false}
+        command: ["bash", "-c",
+            "radio=$(nmcli -t -f WIFI general 2>/dev/null); " +
+            "conn=$(nmcli -t -f ACTIVE,SSID,SIGNAL dev wifi 2>/dev/null | awk -F: '/^yes/{print $2\"|\"$3;exit}'); " +
+            "inet=$(nmcli -t -f CONNECTIVITY general 2>/dev/null); " +
+            "echo \"${radio}|${conn}|${inet}\""
+        ]
+        stdout: SplitParser { onRead: function(l) {
+            // Format: "enabled|SSID|SIGNAL|full"  or  "disabled||none"
+            var raw = l.trim()
+            // Split into: [radio, SSID|SIGNAL, connectivity]
+            // First field is radio state, last is connectivity, middle is SSID|SIGNAL
+            var firstPipe = raw.indexOf("|")
+            var lastPipe  = raw.lastIndexOf("|")
+            if (firstPipe < 0) return
+
+            var radio = raw.substring(0, firstPipe)
+            var connPart = raw.substring(firstPipe + 1, lastPipe)
+            var inet  = raw.substring(lastPipe + 1)
+
+            // Radio state
+            root.wifiRadioOn = (radio === "enabled")
+
+            // Connection state
+            if (connPart && connPart.indexOf("|") >= 0) {
+                var cp = connPart.split("|")
+                root.wifiName = cp[0] || "Wi-Fi"
+                root.wifiSignal = parseInt(cp[1]) || 0
+                root.wifiConnected = true
+            } else {
+                root.wifiName = "Wi-Fi"
+                root.wifiSignal = -1
+                root.wifiConnected = false
+            }
+
+            // Internet connectivity
+            root.wifiHasInternet = (inet === "full")
         }}
     }
     Process { id: btProc; running: false
         command:["bash","-c","bluetoothctl show 2>/dev/null|grep -q 'Powered: yes'&&echo on||echo off"]
         stdout: SplitParser { onRead: function(l){root.btOn=l.trim()==="on"} }
+    }
+    Process { id: dndProc; running: false
+        command:["bash","-c","dunstctl is-paused 2>/dev/null"]
+        stdout: SplitParser { onRead: function(l){root.dndOn=l.trim()==="true"} }
     }
     Process { id: volProc; running: false
         command:["bash","-c","wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null|awk '{printf\"%d\",$2*100}'"]
@@ -159,6 +220,12 @@ PanelWindow {
                               security: p[2]||"", inUse: p[3]==="*", isKnown: p[4]==="1" }
                     if (e.isKnown) kn.push(e); else un.push(e)
                 }
+                kn.sort(function(a, b) {
+                    var aConn = (root.wifiConnected && a.ssid === root.wifiName);
+                    var bConn = (root.wifiConnected && b.ssid === root.wifiName);
+                    if (aConn !== bConn) return aConn ? -1 : 1;
+                    return b.signal - a.signal;
+                })
                 root.knownNetworks = kn
                 root.unknownNetworks = un
                 root._wifiBuf = ""
@@ -187,9 +254,12 @@ PanelWindow {
                     root.wifiPassError = "Неверный пароль или ошибка подключения"
                 } else {
                     root.wifiPassVisible = false
-                    root.wifiPassError   = ""
-                    wifiProc.running     = true
-                    wifiScanProc.running = true
+                    root.btPanelOpen = false
+                    wifiProc.running = true
+                    btProc.running = true
+                    dndProc.running = true
+                    volProc.running = true
+                    briProc.running = true
                 }
             }
         }
@@ -221,7 +291,6 @@ PanelWindow {
         implicitHeight: 76
         radius: 18
         color:  active ? root.activeColor : root.inactiveColor
-        Behavior on color { ColorAnimation { duration: 180 } }
 
         // Card-body MouseArea (covers everything, lowest z)
         MouseArea {
@@ -240,7 +309,6 @@ PanelWindow {
                 color: iconArea.containsMouse
                     ? (wb.active ? Qt.rgba(0,0,0,0.18) : Qt.rgba(1,1,1,0.12))
                     : (wb.active ? Qt.rgba(0,0,0,0.10) : Qt.rgba(1,1,1,0.06))
-                Behavior on color { ColorAnimation { duration: 120 } }
 
                 Image {
                     id: wbIconImg
@@ -254,7 +322,6 @@ PanelWindow {
                     anchors.fill: wbIconImg
                     source: wbIconImg
                     color: wb.active ? root.textDark : root.textLight
-                    Behavior on color { ColorAnimation { duration: 180 } }
                 }
 
                 MouseArea {
@@ -332,20 +399,19 @@ PanelWindow {
                     Rectangle {
                         width: Math.max(8, parent.width * (sr.value / 100))
                         height:parent.height; radius:parent.radius; color:root.sliderFill
-                        Behavior on width { NumberAnimation { duration: sr.dragging ? 0 : 100 } }
+
                     }
 
                     Rectangle {
                         x: Math.max(0, Math.min(parent.width - 16, parent.width * (sr.value / 100) - 8))
                         y: -4; width:16; height:16; radius:8
                         color: root.sliderFill
-                        Behavior on x { NumberAnimation { duration: sr.dragging ? 0 : 100 } }
+
 
                         Rectangle {
                             anchors.centerIn: parent
                             width: 24; height: 24; radius: 12
                             color: Qt.rgba(0.80, 0.65, 0.97, sr.dragging ? 0.20 : 0)
-                            Behavior on color { ColorAnimation { duration: 200 } }
                         }
                     }
 
@@ -413,7 +479,6 @@ PanelWindow {
         Layout.fillWidth: true
         radius: 12
         color: niArea.containsMouse ? Qt.rgba(1,1,1,0.06) : "transparent"
-        Behavior on color { ColorAnimation { duration: 100 } }
 
         RowLayout {
             anchors { fill:parent; leftMargin:14; rightMargin:14 }
@@ -437,7 +502,6 @@ PanelWindow {
                     anchors.fill: niWifiImg
                     source: niWifiImg
                     color: ni.inUse ? root.activeColor : root.textLight
-                    Behavior on color { ColorAnimation { duration: 150 } }
                 }
             }
 
@@ -495,7 +559,7 @@ PanelWindow {
     Rectangle {
         id: panel
         z: 10
-        anchors { bottom:parent.bottom; bottomMargin:86; right:parent.right; rightMargin:16 }
+        anchors { bottom:parent.bottom; bottomMargin:64; right:parent.right; rightMargin:16 }
 
         // Stop clicks on the panel from dismissing it
         MouseArea { anchors.fill: parent; onClicked: {} }
@@ -503,12 +567,9 @@ PanelWindow {
         height: root.btPanelOpen
             ? (btCol.implicitHeight + 32)
             : (outerCol.implicitHeight + 32)
-        Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         radius: 24
         color:  root.panelBg
         visible: root.popupVisible
-        opacity: root.popupVisible ? 1.0 : 0.0
-        Behavior on opacity { NumberAnimation{duration:140;easing.type:Easing.OutCubic} }
 
         border.color: Qt.rgba(1, 1, 1, 0.05)
         border.width: 1
@@ -531,13 +592,13 @@ PanelWindow {
                 spacing: 8
 
                 WideButton {
-                    active: root.wifiOn
-                    icon:   "assets/icons/wifi.svg"
-                    title:  root.wifiOn ? root.wifiName : "Wi-Fi"
-                    subtitle: root.wifiOn ? root.sigLabel(root.wifiSignal) : "Off"
+                    active: root.wifiRadioOn
+                    icon:   root.wifiIcon()
+                    title:  root.wifiConnected ? root.wifiName : "Wi-Fi"
+                    subtitle: root.wifiSubtitle()
                     Layout.fillWidth: true
                     onIconClicked: {
-                        cmdProc.command = root.wifiOn
+                        cmdProc.command = root.wifiRadioOn
                             ? ["nmcli","radio","wifi","off"]
                             : ["nmcli","radio","wifi","on"]
                         cmdProc.running = true
@@ -567,6 +628,51 @@ PanelWindow {
             }
 
             // ──────────────────────────────────────────────────────────────
+            //  TILES: Screen capture + Do not disturb (side by side)
+            // ──────────────────────────────────────────────────────────────
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                WideButton {
+                    active: false
+                    icon:   "assets/icons/screenshot.svg"
+                    title:  "Screen capture"
+                    subtitle: "Capture region"
+                    Layout.fillWidth: true
+                    onIconClicked: {
+                        root.popupVisible = false
+                        cmdProc.command = ["hyprshot", "-m", "region"]
+                        cmdProc.running = true
+                    }
+                    onClicked: {
+                        root.popupVisible = false
+                        cmdProc.command = ["hyprshot", "-m", "region"]
+                        cmdProc.running = true
+                    }
+                }
+
+                WideButton {
+                    active: root.dndOn
+                    icon:   root.dndOn ? "assets/icons/notifications-off.svg" : "assets/icons/notifications.svg"
+                    title:  "Do not disturb"
+                    subtitle: root.dndOn ? "On" : "Off"
+                    Layout.fillWidth: true
+                    onIconClicked: {
+                        cmdProc.command = ["dunstctl", "set-paused", "toggle"]
+                        cmdProc.running = true
+                        // Use a short delay to re-fetch the status after toggling
+                        Qt.callLater(function(){ dndProc.running = true })
+                    }
+                    onClicked: {
+                        cmdProc.command = ["dunstctl", "set-paused", "toggle"]
+                        cmdProc.running = true
+                        Qt.callLater(function(){ dndProc.running = true })
+                    }
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────
             //  WI-FI DROPDOWN
             // ──────────────────────────────────────────────────────────────
             Rectangle {
@@ -579,9 +685,7 @@ PanelWindow {
                 border.color: Qt.rgba(1, 1, 1, 0.06)
                 border.width: 1
                 visible: implicitHeight > 0
-                Behavior on implicitHeight {
-                    NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                }
+
 
                 ColumnLayout {
                     id: wifiCol
@@ -605,7 +709,8 @@ PanelWindow {
                         model: root.knownNetworks
                         NetworkItem {
                             ssid: modelData.ssid; sigVal: modelData.signal
-                            security: modelData.security; inUse: modelData.inUse
+                            security: modelData.security
+                            inUse: root.wifiConnected && modelData.ssid === root.wifiName
                             onClicked: {
                                 wifiConnProc.command = ["nmcli","con","up",modelData.ssid]
                                 wifiConnProc.running = true
@@ -696,7 +801,6 @@ PanelWindow {
                     id: powerBtn
                     implicitWidth:56; implicitHeight:38; radius:19
                     color: root.inactiveColor
-                    Behavior on color { ColorAnimation { duration: 150 } }
 
                     RowLayout { anchors.centerIn:parent; spacing:4
                         Image {
@@ -729,7 +833,6 @@ PanelWindow {
                     id: settingsBtn
                     implicitWidth:38; implicitHeight:38; radius:19
                     color: root.inactiveColor
-                    Behavior on color { ColorAnimation { duration: 150 } }
 
                     Image {
                         id: settingsImg
@@ -771,9 +874,7 @@ PanelWindow {
                 border.color: Qt.rgba(1, 1, 1, 0.06)
                 border.width: 1
                 visible: implicitHeight > 0
-                Behavior on implicitHeight {
-                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                }
+
 
                 ColumnLayout {
                     id: powerMenuCol
@@ -798,7 +899,6 @@ PanelWindow {
                             implicitHeight: 42
                             radius: 12
                             color: pmArea.containsMouse ? Qt.rgba(1,1,1,0.07) : "transparent"
-                            Behavior on color { ColorAnimation { duration: 100 } }
 
                             RowLayout {
                                 anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
@@ -869,7 +969,6 @@ PanelWindow {
                 Rectangle {
                     implicitWidth:36; implicitHeight:36; radius:18
                     color: backArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
-                    Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
                         id: backImg
@@ -906,7 +1005,6 @@ PanelWindow {
                 Rectangle {
                     implicitWidth:36; implicitHeight:36; radius:18
                     color: gearArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
-                    Behavior on color { ColorAnimation { duration: 100 } }
 
                     Image {
                         id: btGearImg
@@ -934,7 +1032,6 @@ PanelWindow {
                 implicitHeight: 56
                 radius: 18
                 color: root.btOn ? root.activeColor : root.inactiveColor
-                Behavior on color { ColorAnimation { duration: 180 } }
 
                 RowLayout {
                     anchors { fill: parent; leftMargin: 16; rightMargin: 16 }
@@ -956,7 +1053,6 @@ PanelWindow {
                             anchors.fill: btToggleImg
                             source: btToggleImg
                             color: root.btOn ? root.textDark : root.textLight
-                            Behavior on color { ColorAnimation { duration: 180 } }
                         }
                     }
 
@@ -975,15 +1071,13 @@ PanelWindow {
                         color: root.btOn
                             ? Qt.rgba(0.06, 0.06, 0.10, 0.35)
                             : Qt.rgba(1,1,1,0.12)
-                        Behavior on color { ColorAnimation { duration: 150 } }
 
                         Rectangle {
                             width: 18; height: 18; radius: 9
                             anchors.verticalCenter: parent.verticalCenter
                             x: root.btOn ? parent.width - width - 3 : 3
                             color: root.btOn ? root.textDark : root.subtextLight
-                            Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                            Behavior on color { ColorAnimation { duration: 150 } }
+
                         }
 
                         MouseArea {
@@ -1021,7 +1115,6 @@ PanelWindow {
                         Layout.fillWidth: true
                         implicitHeight: 44; radius: 12
                         color: pairArea.containsMouse ? Qt.rgba(1,1,1,0.06) : "transparent"
-                        Behavior on color { ColorAnimation { duration: 100 } }
 
                         RowLayout {
                             anchors { fill: parent; leftMargin: 14; rightMargin: 14 }
@@ -1099,8 +1192,6 @@ PanelWindow {
         id: wifiPassOverlay
         anchors.fill: parent
         visible: root.wifiPassVisible && root.popupVisible
-        opacity: visible ? 1.0 : 0.0
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
         // Full-screen transparent backdrop to catch clicks everywhere
         color: Qt.rgba(0, 0, 0, 0.35)
@@ -1143,7 +1234,7 @@ PanelWindow {
             id: wifiPassCard
             z: 10
             anchors {
-                bottom: parent.bottom; bottomMargin: 86
+                bottom: parent.bottom; bottomMargin: 64
                 right: parent.right; rightMargin: 16
             }
             width: 380
@@ -1226,7 +1317,6 @@ PanelWindow {
                         ? Qt.rgba(0.80, 0.65, 0.97, 0.70)
                         : Qt.rgba(1, 1, 1, 0.10)
                     border.width: wifiPassField.activeFocus ? 1.5 : 1
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
 
                     RowLayout {
                         anchors { fill: parent; leftMargin: 14; rightMargin: 10 }
@@ -1259,7 +1349,6 @@ PanelWindow {
                             implicitWidth: 28; implicitHeight: 28; radius: 8
                             color: eyeArea.containsMouse
                                 ? Qt.rgba(1,1,1,0.10) : "transparent"
-                            Behavior on color { ColorAnimation { duration: 100 } }
 
                             Image {
                                 id: eyeImg
@@ -1294,7 +1383,6 @@ PanelWindow {
                     font.pixelSize: 11; font.family: "Google Sans"
                     color: "#f38ba8"   // Catppuccin red
                     visible: root.wifiPassError !== ""
-                    Behavior on Layout.bottomMargin { NumberAnimation { duration: 150 } }
                 }
 
                 // ── Connecting indicator ──────────────────────────────
@@ -1318,7 +1406,6 @@ PanelWindow {
                         implicitHeight: 40; radius: 12
                         color: cancelArea.containsMouse
                             ? Qt.rgba(1,1,1,0.10) : root.inactiveColor
-                        Behavior on color { ColorAnimation { duration: 120 } }
 
                         Text {
                             anchors.centerIn: parent
@@ -1359,9 +1446,7 @@ PanelWindow {
                         implicitHeight: 40; radius: 12
                         color: connectArea.containsMouse
                             ? Qt.lighter(root.activeColor, 1.12) : root.activeColor
-                        Behavior on color { ColorAnimation { duration: 120 } }
                         opacity: wifiPassProc.running ? 0.55 : 1.0
-                        Behavior on opacity { NumberAnimation { duration: 150 } }
 
                         Text {
                             anchors.centerIn: parent

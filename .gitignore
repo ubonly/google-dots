@@ -1,0 +1,7 @@
+# Quickshell runtime / cache
+quickshell/apps.json
+quickshell/recent-apps.json
+quickshell/clipboard_pins/
+
+# Local Claude Code settings (per-machine)
+quickshell/.claude/
