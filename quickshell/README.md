@@ -1,93 +1,101 @@
-# Quickshell Dock для Hyprland (Arch Linux)
+# Quickshell Dock for Hyprland (Arch Linux)
 
-Плавающий dock-бар снизу экрана: воркспейсы, запуск приложений, системный трей, часы.
+A floating dock and desktop environment layer for Hyprland built with [Quickshell](https://outfoxxed.me/quickshell/). Features include workspace indicators, app launcher, system tray, clock/calendar, quick settings, notifications, clipboard history, and a screen capture overlay.
 
-## Установка
+## Installation
 
-### 1. Зависимости
+### 1. Dependencies
+
+Make sure you have all required dependencies installed for the widgets to function properly.
 
 ```bash
-# Quickshell (из AUR)
+# Core Quickshell (from AUR)
 yay -S quickshell-git
 
-# Шрифты
+# Fonts and Icons
 sudo pacman -S ttf-roboto
-yay -S ttf-material-symbols-variable-git   # иконки Material Symbols
-yay -S ttf-inter                            # шрифт Inter (для часов)
+yay -S ttf-material-symbols-variable-git   # Material Symbols icons
+yay -S ttf-inter                           # Inter font (for clock)
+
+# System Utilities (for Quick Settings & Dock)
+sudo pacman -S jq python networkmanager bluez-utils wireplumber
+
+# Screen Capture Tools
+yay -S grim hyprshot wl-screenrec wl-clipboard
+
+# Clipboard Manager
+sudo pacman -S cliphist
 ```
 
-### 2. Скопируй конфиг
+### 2. Copy the Configuration
+
+Copy this repository to your Quickshell config directory:
 
 ```bash
-cp -r /run/media/ubonly/projects/quickshell-dock ~/.config/quickshell
+git clone https://github.com/ubonly/google-dots.git ~/google-dots
+cp -r ~/google-dots/quickshell ~/.config/quickshell
 ```
 
-### 3. Настрой Hyprland (hyprland.conf)
+### 3. Configure Hyprland (`hyprland.conf`)
 
-Добавь в `~/.config/hypr/hyprland.conf`:
+Add the following rules to your `~/.config/hypr/hyprland.conf`:
 
 ```ini
-# Blur и прозрачность для quickshell
+# Blur and transparency for Quickshell overlays
 layerrule = blur, quickshell
 layerrule = ignorealpha 0.15, quickshell
 layerrule = xray 0, quickshell
 
-# Автозапуск
+# Autostart
 exec-once = quickshell
 ```
 
-### 4. Запуск
+### 4. Running Quickshell
 
 ```bash
-# Ручной запуск для проверки
+# Start manually for testing
 quickshell
 
-# Или если конфиг в другом месте:
+# Or if your config is in a different location:
 quickshell -p ~/.config/quickshell
 ```
 
-## Структура файлов
+## File Structure
 
 ```
 ~/.config/quickshell/
-├── shell.qml            # Главный файл (PanelWindow)
-├── WorkspaceButton.qml  # Индикаторы воркспейсов
-├── AppButton.qml        # Кнопки запуска приложений
-├── TrayIcon.qml         # Иконки системного трея
-├── ClockWidget.qml      # Часы и дата
-└── DockSeparator.qml    # Разделители
+├── shell.qml                     # Main layout and overlays
+├── WorkspaceButton.qml           # Workspace indicators
+├── AppLauncher.qml               # Application launcher
+├── QuickSettingsPopup.qml        # Quick settings (WiFi, Bluetooth, Volume)
+├── ScreenCapture.qml             # ChromeOS-style screen capture toolbar
+├── ClipboardPopup.qml            # Clipboard history manager
+├── NotificationsPopup.qml        # Notification toasts
+├── NotificationCenterPopup.qml   # Notification history center
+├── MediaPopup.qml                # MPRIS Media controls
+└── ClockWidget.qml               # Clock and date widget
 ```
 
-## Кастомизация
+## Customization
 
-### Изменить приложения в доке
+### Pinned Apps in App Launcher
+The pinned apps are automatically read from `apps.json`.
+You can customize the available apps by editing `apps.json`.
 
-Открой `shell.qml` и отредактируй блок `AppButton`:
+### Changing the Look
+To modify the appearance, open `shell.qml` or specific component files. Variables like colors, radii, and margins are usually defined at the top of the QML components.
 
-```qml
-AppButton { appName: "Firefox";  appCmd: "firefox";  iconChar: "\ue051" }
-AppButton { appName: "VSCode";   appCmd: "code";     iconChar: "\ue86f" }
-// Добавь свои...
+## Shortcuts & IPC
+
+- **Super + R**: Toggle App Launcher
+- **Super + V**: Toggle Clipboard History
+- **Super + Shift + S**: Region Screenshot
+- **PrintScreen**: Fullscreen Screenshot
+
+These shortcuts are registered globally via Quickshell's `GlobalShortcut` component. You can also trigger them via IPC:
+```bash
+qs ipc call launcher toggle
+qs ipc call clipboard_ui toggle
+qs ipc call screenshot region
+qs ipc call screenshot fullscreen
 ```
-
-Коды Material Symbols: https://fonts.google.com/icons
-
-### Количество воркспейсов
-
-В `shell.qml` измени `model: 9` → нужное число.
-
-### Внешний вид
-
-| Параметр | Файл | Что меняет |
-|---|---|---|
-| `height: 58` | shell.qml | Высота бара |
-| `radius: 18` | shell.qml | Скругление углов |
-| `bottomMargin: 14` | shell.qml | Отступ от края экрана |
-| `color: Qt.rgba(...)` | shell.qml | Цвет фона |
-| `spacing: 2` | shell.qml | Расстояние между иконками |
-
-## Горячие клавиши в доке
-
-- **ЛКМ** на воркспейс → переключиться
-- **ЛКМ** на приложение → запустить
-- **ЛКМ/ПКМ** на иконку трея → activate / secondary activate
