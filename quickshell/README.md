@@ -15,7 +15,8 @@ yay -S quickshell-git
 # Fonts and Icons
 sudo pacman -S ttf-roboto
 yay -S ttf-material-symbols-variable-git   # Material Symbols icons
-yay -S ttf-inter                           # Inter font (for clock)
+yay -S ttf-google-sans                     # Google Sans font (primary UI font)
+yay -S ttf-inter                           # Inter font (fallback)
 
 # System Utilities (for Quick Settings & Dock)
 sudo pacman -S jq python networkmanager bluez-utils wireplumber
