@@ -1,1 +1,1 @@
-# -- god gave me divine intellect
+# god gave me divine intellect
