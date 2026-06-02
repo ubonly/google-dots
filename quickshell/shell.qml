@@ -525,7 +525,7 @@ ShellRoot {
                                     anchors.fill: parent
                                     anchors.margins: 4
                                     radius: height / 2
-                                    color: dateArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+                                    color: "transparent"
                                 }
 
                                 Text {
@@ -534,16 +534,6 @@ ShellRoot {
                                     text: Qt.formatDateTime(clock.date, "MMM d")
                                     color: Qt.rgba(1, 1, 1, 0.90)
                                     font { pixelSize: 13; family: "Google Sans"; weight: Font.Bold }
-                                }
-
-                                MouseArea {
-                                    id: dateArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if (qsPopupInst)
-                                            qsPopupInst.popupVisible = !qsPopupInst.popupVisible
-                                    }
                                 }
                             }
 
