@@ -118,7 +118,6 @@ Item {
                     res.push("file:///usr/share/icons/hicolor/scalable/apps/" + n + ".svg");
                     res.push("file:///usr/share/icons/hicolor/256x256/apps/"  + n + ".png");
                     res.push("file:///usr/share/icons/hicolor/48x48/apps/"    + n + ".png");
-                    // Flatpak system + user icon exports (hicolor)
                     res.push("file:///var/lib/flatpak/exports/share/icons/hicolor/scalable/apps/" + n + ".svg");
                     res.push("file:///var/lib/flatpak/exports/share/icons/hicolor/256x256/apps/"  + n + ".png");
                     if (homeDir.length > 0) {

@@ -462,7 +462,6 @@ ShellRoot {
                         }
                     }
 
-                    // ── Combined status block: notifications | date | wifi+time ──
                     Rectangle {
                         id: combinedPill
                         width: combinedRow.implicitWidth
@@ -477,7 +476,6 @@ ShellRoot {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 0
 
-                            // ── Notification section ──
                             Item {
                                 id: notifSection
                                 visible: notifCenterInst.history.length > 0
@@ -509,7 +507,6 @@ ShellRoot {
                                 }
                             }
 
-                            // Divider
                             Item {
                                 visible: notifCenterInst.history.length > 0
                                 width: 2; height: 38
@@ -520,7 +517,6 @@ ShellRoot {
                                 }
                             }
 
-                            // ── Date section ──
                             Item {
                                 id: dateSection
                                 width: dateTxt.implicitWidth + 24; height: 38
@@ -551,7 +547,6 @@ ShellRoot {
                                 }
                             }
 
-                            // Divider
                             Item {
                                 width: 2; height: 38
                                 Rectangle {
@@ -561,7 +556,6 @@ ShellRoot {
                                 }
                             }
 
-                            // ── WiFi + Time section ──
                             Item {
                                 id: statusSection
                                 width: wifiTimeRow.implicitWidth + 28; height: 38

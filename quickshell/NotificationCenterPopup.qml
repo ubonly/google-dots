@@ -115,7 +115,7 @@ PanelWindow {
             id: headerSection
             anchors {
                 top: parent.top; left: parent.left; right: parent.right
-                topMargin: 12; leftMargin: 16; rightMargin: 12
+                topMargin: 12; leftMargin: 16; rightMargin: 16
             }
             height: 40
 
@@ -130,7 +130,7 @@ PanelWindow {
             Rectangle {
                 id: clearBtn
                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                width: clearLbl.implicitWidth + 12 + 24
+                width: clearRow.implicitWidth + 20
                 height: 28
                 radius: 14
                 color: clearArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
@@ -138,6 +138,7 @@ PanelWindow {
                 visible: root.history.length > 0
 
                 Row {
+                    id: clearRow
                     anchors.centerIn: parent
                     spacing: 6
 
