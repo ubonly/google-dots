@@ -408,7 +408,7 @@ ShellRoot {
                         }
 
                         Loader {
-                            // Оставлено выключенным по просьбе пользователя
+                            // Disabled by default
                             active: false // SystemTray.items.values && SystemTray.items.values.length > 0
                             sourceComponent: Row {
                                 spacing: 0

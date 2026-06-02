@@ -6,7 +6,7 @@ import Qt5Compat.GraphicalEffects
 Rectangle {
     id: card
 
-    // ── Notification data (set from delegate) ─────────────────────────────
+    // notification data (set from delegate)
     property var    notification: null
     property string appName:      notification ? (notification.appName  || "Notification") : "Notification"
     property string summary:      notification ? (notification.summary  || "")             : ""
@@ -14,7 +14,7 @@ Rectangle {
     property string appIcon:      notification ? (notification.appIcon  || "")             : ""
     property var    notifTime:    notification ? notification.time : new Date()
 
-    // ── Mocha palette ─────────────────────────────────────────────────────
+    // mocha palette
     readonly property color cBg:        "#1c1c1f"
     readonly property color cBgHover:   "#26262a"
     readonly property color cIconBg:    "#3a3a3d"
@@ -22,14 +22,14 @@ Rectangle {
     readonly property color cTextBody:  "#c8c8cc"
     readonly property color cTextTitle: "#ffffff"
 
-    // ── Container ─────────────────────────────────────────────────────────
+    // container
     implicitHeight: cardLayout.implicitHeight + 28
     radius: 20
     color: cBg
     border.color: Qt.rgba(1, 1, 1, 0.04)
     border.width: 1
 
-    // ── Fade-in animation when added to ListView ──────────────────────────
+    // fade-in animation when added to listview
     opacity: 0
     transform: Translate { id: slideIn; y: -12 }
     Component.onCompleted: {
@@ -39,7 +39,7 @@ Rectangle {
     }
     Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
-    // ── Auto-dismiss with hover pause ─────────────────────────────────────
+    // autodismiss with hover pause
     Timer {
         id: dismissTimer
         interval: 3000
@@ -67,12 +67,12 @@ Rectangle {
         anchors.margins: 14
         spacing: 6
 
-        // ── HEADER ──────────────────────────────────────────────────────
+        // header
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
 
-            // App icon (round)
+            // app icon (round)
             Rectangle {
                 Layout.preferredWidth: 18
                 Layout.preferredHeight: 18
@@ -92,7 +92,7 @@ Rectangle {
                 }
             }
 
-            // App name
+            // app name
             Text {
                 text: card.appName
                 color: card.cTextDim
@@ -101,24 +101,24 @@ Rectangle {
                 Layout.maximumWidth: 160
             }
 
-            // Dot separator
+            // dot separator
             Text {
                 text: "•"
                 color: card.cTextDim
                 font.pixelSize: 12
             }
 
-            // Time
+            // time
             Text {
                 text: card._formatTime(card.notifTime)
                 color: card.cTextDim
                 font { pixelSize: 12; family: "Google Sans" }
             }
 
-            // Spacer pushes chevron to the right edge
+            // spacer pushes chevron to the right edge
             Item { Layout.fillWidth: true }
 
-            // Chevron-up round button
+            // chevron-up round button
             Rectangle {
                 Layout.preferredWidth: 22
                 Layout.preferredHeight: 22
@@ -150,13 +150,13 @@ Rectangle {
             }
         }
 
-        // ── BODY ─────────────────────────────────────────────────────────
+        // body
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 2
             spacing: 2
 
-            // Summary (title)
+            // summary (title)
             Text {
                 Layout.fillWidth: true
                 text: card.summary
@@ -168,7 +168,7 @@ Rectangle {
                 visible: text.length > 0
             }
 
-            // Body
+            // body
             Text {
                 Layout.fillWidth: true
                 text: card.bodyText
@@ -181,7 +181,7 @@ Rectangle {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // helpers
     function _formatTime(t) {
         if (!t) return "now"
         var now = new Date()

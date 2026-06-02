@@ -22,7 +22,7 @@ PanelWindow {
     WlrLayershell.keyboardFocus: isOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     color: "transparent"
 
-    // Keep window alive during close animation
+    // keep window alive during close animation
     property bool _animVisible: false
     visible: _animVisible
 
@@ -51,7 +51,7 @@ PanelWindow {
         onTriggered: mediaPopup._animVisible = false
     }
 
-    // Dismiss area
+    // dismiss area
     MouseArea {
         anchors.fill: parent
         visible: mediaPopup.isOpen
@@ -59,7 +59,7 @@ PanelWindow {
         onClicked: mediaPopup.isOpen = false
     }
 
-    // ── Main popup container ─────────────────────────────────────────────
+    // main popup container
     Rectangle {
         id: bgRect
         z: 10
@@ -91,7 +91,7 @@ PanelWindow {
             }
             spacing: 12
 
-            // ── Header ──────────────────────────────────────────────────
+            // header
             Item {
                 id: header
                 width: parent.width
@@ -105,7 +105,7 @@ PanelWindow {
                 }
             }
 
-            // ── Empty state ────────────────────────────────────────────
+            // empty state
             Item {
                 width: parent.width
                 height: 60
@@ -119,7 +119,7 @@ PanelWindow {
                 }
             }
 
-            // ── Players ────────────────────────────────────────────────
+            // players
             Repeater {
                 model: Mpris.players
 
@@ -132,7 +132,7 @@ PanelWindow {
                     color: Qt.rgba(1, 1, 1, 0.06)
                     radius: 16
 
-                    // Top row: art + info + play
+                    // top row: art + info + play
                     Item {
                         id: topRow
                         anchors {
@@ -141,7 +141,7 @@ PanelWindow {
                         }
                         height: 72
 
-                        // Album art
+                        // album art
                         Rectangle {
                             id: artBg
                             width: 72; height: 72; radius: 10
@@ -175,7 +175,7 @@ PanelWindow {
                             }
                         }
 
-                        // Play / Pause
+                        // play / Pause
                         Rectangle {
                             id: playBtn
                             anchors { right: parent.right; verticalCenter: parent.verticalCenter }
@@ -202,7 +202,7 @@ PanelWindow {
                             }
                         }
 
-                        // Track info — anchored between art and play button
+                        // track info — anchored between art and play button
                         Column {
                             anchors {
                                 left: artBg.right; leftMargin: 12
@@ -236,7 +236,7 @@ PanelWindow {
                         }
                     }
 
-                    // Bottom row: prev + slider + next
+                    // bottom row: prev + slider + next
                     Item {
                         id: bottomRow
                         anchors {
@@ -245,7 +245,7 @@ PanelWindow {
                         }
                         height: 24
 
-                        // Prev
+                        // prev
                         Item {
                             id: prevBtn
                             width: 24; height: 24
@@ -271,7 +271,7 @@ PanelWindow {
                             }
                         }
 
-                        // Slider
+                        // slider
                         Item {
                             id: sliderArea
                             anchors {
@@ -316,7 +316,7 @@ PanelWindow {
                             }
                         }
 
-                        // Next
+                        // next
                         Item {
                             id: nextBtn
                             width: 24; height: 24

@@ -60,7 +60,7 @@ PanelWindow {
         onTriggered: root._animVisible = false
     }
 
-    // Dismiss area (click anywhere outside the panel closes it)
+    // dismiss area (click anywhere outside the panel closes it)
     MouseArea {
         anchors.fill: parent
         visible: root.isOpen
@@ -68,7 +68,7 @@ PanelWindow {
         onClicked: root.isOpen = false
     }
 
-    // Keyboard dismiss: Escape closes
+    // keyboard dismiss: escape closes
     Item {
         id: focusGrabber
         anchors.fill: parent
@@ -85,7 +85,7 @@ PanelWindow {
         }
     }
 
-    // ── Main popup container ─────────────────────────────────────────────
+    // main popup container
     Rectangle {
         id: bgRect
         z: 10
@@ -110,7 +110,7 @@ PanelWindow {
         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
-        // ── Header ────────────────────────────────────────────────────
+        // header
         Item {
             id: headerSection
             anchors {
@@ -126,7 +126,7 @@ PanelWindow {
                 font { family: "Google Sans"; pixelSize: 15; weight: Font.Medium }
             }
 
-            // "Clear all" button
+            // clear all button
             Rectangle {
                 id: clearBtn
                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
@@ -175,7 +175,7 @@ PanelWindow {
             }
         }
 
-        // ── Content (list or empty state) ─────────────────────────────
+        // content (list or empty state)
         Item {
             id: contentArea
             anchors {
@@ -187,7 +187,7 @@ PanelWindow {
                 ? 80
                 : Math.min(540, notifList.contentHeight + 4)
 
-            // Empty state
+            // empty state
             Column {
                 anchors.centerIn: parent
                 spacing: 8
@@ -234,7 +234,7 @@ PanelWindow {
                     color: itemArea.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.04)
                     Behavior on color { ColorAnimation { duration: 120 } }
 
-                    // App icon
+                    // app icon
                     Rectangle {
                         id: appIconBg
                         anchors { left: parent.left; leftMargin: 10; top: parent.top; topMargin: 11 }
@@ -253,7 +253,7 @@ PanelWindow {
                         }
                     }
 
-                    // Close (X) button
+                    // close (x) button
                     Rectangle {
                         id: closeBtn
                         anchors { right: parent.right; rightMargin: 8; top: parent.top; topMargin: 8 }
@@ -284,7 +284,7 @@ PanelWindow {
                         }
                     }
 
-                    // Text column
+                    // text column
                     Column {
                         id: textCol
                         anchors {

@@ -38,7 +38,7 @@ def main():
     for d in dirs_to_check:
         if not os.path.exists(d):
             continue
-        # Get all files in these directories (non-recursive for speed)
+        # get all files in these directories (non-recursive for speed)
         for entry in os.scandir(d):
             if entry.is_file() and not entry.name.startswith('.'):
                 stat = entry.stat()
@@ -48,10 +48,10 @@ def main():
                     "mtime": stat.st_mtime
                 })
                 
-    # Sort by mtime descending
+    # sort by mtime descending
     files.sort(key=lambda x: x["mtime"], reverse=True)
     
-    # Take top 4
+    # take top 4
     top_files = files[:4]
     
     result = []

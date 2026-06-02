@@ -38,7 +38,7 @@ PanelWindow {
         onTriggered: launcher._animVisible = false
     }
 
-    // ── Palette ────────────────────────────────────────────────────────────
+    // palette
     readonly property color bgTint:       Qt.rgba(0.11, 0.12, 0.18, 0.96)
     readonly property color searchBg:     Qt.rgba(0.18, 0.20, 0.28, 1.0)
     readonly property color searchBorder: Qt.rgba(1, 1, 1, 0.05)
@@ -46,7 +46,7 @@ PanelWindow {
     readonly property color textSecondary:Qt.rgba(1, 1, 1, 0.45)
     readonly property color hoverBg:      Qt.rgba(1, 1, 1, 0.07)
 
-    // ── Recent apps ───────────────────────────────────────────────────────
+    // recent apps
     property var recentApps: []
     property string _recentBuf: ""
     readonly property string recentFile: Qt.resolvedUrl("recent-apps.json").toString().replace("file://", "")
@@ -155,7 +155,7 @@ PanelWindow {
         }
     }
 
-    // ── App loading ───────────────────────────────────────────────────────
+    // app loading
     property var allApps: []
     property var filteredApps: []
     property string searchText: ""
@@ -228,7 +228,7 @@ PanelWindow {
         isOpen = false
     }
 
-    // ── Full-screen background (transparent) ──────────────────────────────
+    // full-screen background (transparent)
     Rectangle {
         anchors.fill: parent
         color: "transparent"
@@ -239,7 +239,7 @@ PanelWindow {
         }
     }
 
-    // ── Popup Window Container ─────────────────────────────────────────────
+    // popup Window Container
     Rectangle {
         id: popupWindow
         width: 640
@@ -300,13 +300,13 @@ PanelWindow {
             }
         ]
 
-        // Block clicks from dismissing
+        // block clicks from dismissing
         MouseArea { anchors.fill: parent; onClicked: {} }
 
-        // Explicit anchor-based layout: prevents any chance of the
-        // Recently-used row moving when the grid scrolls.
+        // explicit anchor-based layout: prevents any chance of the
+        // recently-used row moving when the grid scrolls.
 
-            // ── Search bar ────────────────────────────────────────────
+            // search bar
             Rectangle {
                 id: searchBar
                 anchors {
@@ -398,7 +398,7 @@ PanelWindow {
                 }
             }
 
-            // ── App grid (scrollable area — Recently used scrolls with it) ──
+            // app grid (scrollable area — recently used scrolls with it)
             Flickable {
                 id: appScroll
                 anchors {
@@ -561,7 +561,7 @@ PanelWindow {
 
                             property var app: launcher.filteredApps[index]
 
-                            // Hover & Focus bg
+                            // hover & Focus bg
                             Rectangle {
                                 anchors.fill: parent
                                 radius: 16
@@ -575,7 +575,7 @@ PanelWindow {
                                 anchors.centerIn: parent
                                 spacing: 8
 
-                                // Icon with circular bg
+                                // icon with circular bg
                                 Item {
                                     width: 56; height: 56
                                     anchors.horizontalCenter: parent.horizontalCenter
@@ -609,7 +609,7 @@ PanelWindow {
                                     }
                                 }
 
-                                // Name
+                                // name
                                 Text {
                                     width: Math.min(100, cell.width - 12)
                                     anchors.horizontalCenter: parent.horizontalCenter

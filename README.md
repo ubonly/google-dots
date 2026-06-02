@@ -1,4 +1,4 @@
-# Quickshell Dock for Hyprland Arch Linux (yet)
+# Quickshell Dock for Hyprland (Arch Linux)
 
 A floating dock and desktop environment layer for Hyprland built with [Quickshell](https://outfoxxed.me/quickshell/). Features include workspace indicators, app launcher, system tray, clock/calendar, quick settings, notifications, clipboard history, and a screen capture overlay.
 

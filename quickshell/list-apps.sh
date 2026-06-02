@@ -1,6 +1,6 @@
 #!/bin/bash
-# list-apps.sh — выводит JSON массив установленных приложений
-# Формат: [{"name":"...", "icon":"...", "exec":"..."},...]
+# list-apps.sh — export JSON of installed apps
+# in format of: [{"name":"...", "icon":"...", "exec":"..."},...]
 
 dirs="/usr/share/applications $HOME/.local/share/applications"
 echo "["

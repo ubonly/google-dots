@@ -144,7 +144,7 @@ PanelWindow {
             anchors.fill: parent
             spacing: 0
 
-            // Header
+            // header
             Item {
                 id: headerItem
                 Layout.fillWidth: true
@@ -167,7 +167,7 @@ PanelWindow {
                 color: clipboardPopup.borderColor
             }
 
-            // List
+            // list
             ScrollView {
                 id: listContainer
                 Layout.fillWidth: true
@@ -209,7 +209,7 @@ PanelWindow {
                             anchors.bottomMargin: 6
                             spacing: 10
 
-                            // Type icon
+                            // type icon
                             Item {
                                 Layout.alignment: Qt.AlignTop | Qt.AlignHCenter
                                 Layout.topMargin: 2
@@ -230,7 +230,7 @@ PanelWindow {
                                     color: clipboardPopup.textPrimary
                                 }
                             }
-                            // Content area
+                            // content area
                             Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
@@ -258,7 +258,7 @@ PanelWindow {
                                     maskSource: thumbMask
                                 }
 
-                                // Text content
+                                // text content
                                 ColumnLayout {
                                     anchors.fill: parent
                                     visible: modelData.type !== "image"
@@ -293,7 +293,7 @@ PanelWindow {
                             onClicked: clipboardPopup.restoreItem(modelData)
                         }
 
-                        // Pin toggle button (top-right)
+                        // pin toggle button (top-right)
                         Item {
                             id: pinButton
                             width: 24; height: 24
@@ -340,7 +340,7 @@ PanelWindow {
                 color: clipboardPopup.borderColor
             }
 
-            // Footer
+            // footer
             Item {
                 id: footerItem
                 Layout.fillWidth: true

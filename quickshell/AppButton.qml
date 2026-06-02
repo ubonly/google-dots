@@ -1,6 +1,6 @@
 // AppButton.qml — кнопка приложения с настоящей иконкой из системной темы
 // iconName — freedesktop icon name (e.g. "firefox", "org.telegram.desktop")
-// appCmd   — команда для запуска
+// appCmd   — command to launch
 import Quickshell
 import Quickshell.Hyprland
 import QtQuick
@@ -15,7 +15,7 @@ Item {
     implicitWidth:  46
     implicitHeight: 46
 
-    // ── Фон при наведении / нажатии ─────────────────────────────────────
+    // backrgound when touch/aimed
     Rectangle {
         id: bg
         anchors.centerIn: parent
@@ -29,14 +29,14 @@ Item {
 
 
 
-        // ── Иконка из системной темы ─────────────────────────────────────
+        // icons from system theme
         Image {
             id: icon
             anchors.centerIn: parent
             width:  26
             height: 26
 
-            // Qt автоматически ищет иконку в текущей icon theme (hicolor / papirus / etc.)
+            // Qt automaticly find icon in current icon theme (hicolor / papirus / etc.)
             source: "image://icon/" + root.iconName
 
             smooth:       true
@@ -49,7 +49,7 @@ Item {
 
         }
 
-        // ── Точка "приложение запущено" ──────────────────────────────────
+        // dot "app launched"
         Rectangle {
             id: runDot
             anchors {
@@ -65,7 +65,7 @@ Item {
         }
     }
 
-    // ── Тултип ───────────────────────────────────────────────────────────
+    // tooltip thing
     Rectangle {
         id: tooltip
         anchors {
@@ -100,7 +100,7 @@ Item {
         }
     }
 
-    // ── Mouse ────────────────────────────────────────────────────────────
+    // mouse
     MouseArea {
         id:           mouseArea
         anchors.fill: parent

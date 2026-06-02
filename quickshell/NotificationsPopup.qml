@@ -24,7 +24,7 @@ PanelWindow {
     onNotificationsModelChanged: console.log("[notif-popup] model set, length=",
         notificationsModel ? notificationsModel.length : -1)
 
-    // ── List of notification cards ───────────────────────────────────────
+    // list of notification cards
     ListView {
         id: notifList
         anchors.fill: parent
@@ -40,7 +40,7 @@ PanelWindow {
             notification: modelData
         }
 
-        // Fade + slide-in for new items
+        // fade + slide-in for new items
         add: Transition {
             ParallelAnimation {
                 NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 260; easing.type: Easing.OutCubic }
@@ -48,7 +48,7 @@ PanelWindow {
             }
         }
 
-        // Shift remaining items smoothly when one is removed
+        // shift remaining items smoothly when one is removed
         displaced: Transition {
             NumberAnimation { properties: "y"; duration: 200; easing.type: Easing.OutCubic }
         }

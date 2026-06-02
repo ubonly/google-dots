@@ -1,6 +1,6 @@
-// QuickSettingsPopup.qml — ChromeOS Material You control center
+// QuickSettingsPopup.qml — chromeOS Material you control center
 // Wi-Fi + Bluetooth tiles, brightness/volume sliders, Wi-Fi network dropdown.
-// Catppuccin Mocha palette, inline reusable Components.
+// Catppuccin Mocha palette, inline reusable components.
 
 import Quickshell
 import Quickshell.Wayland
@@ -35,7 +35,7 @@ PanelWindow {
     visible: popupVisible
     color: "transparent"
 
-    // ── Dismiss: click anywhere outside the panel ────────────────────────
+    // dismiss: click anywhere outside the panel
     MouseArea {
         anchors.fill: parent
         visible: root.popupVisible
@@ -61,9 +61,7 @@ PanelWindow {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  PALETTE  (Catppuccin Mocha — Material You)
-    // ══════════════════════════════════════════════════════════════════════
+    //  palette  (Catppuccin Mocha — Material You)
     readonly property color panelBg:       "#1e1e2e"
     readonly property color activeColor:   "#cba6f7"   // lavender
     readonly property color inactiveColor: "#313244"   // surface0
@@ -74,9 +72,7 @@ PanelWindow {
     readonly property color sliderBg:      "#313244"
     readonly property color sliderFill:    "#cba6f7"
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  STATE
-    // ══════════════════════════════════════════════════════════════════════
+    // state
     property string wifiName:        "..."
     property int    wifiSignal:      -1
     property bool   wifiRadioOn:     false   // is the wifi radio enabled
@@ -88,13 +84,13 @@ PanelWindow {
     property bool   dndOn:           false
     property int    volume:          50
 
-    // ── Wi-Fi password popup state ──────────────────────────────────────────
+    // Wi-Fi password popup state
     property bool   wifiPassVisible: false
     property string wifiPassSsid:    ""
     property string wifiPassError:   ""
     property int    brightness: 80
 
-    // Sub-menu state
+    // sub-menu state
     property bool wifiMenuOpen:    false
     property bool btPanelOpen:     false
     property bool powerMenuOpen:   false
@@ -106,7 +102,7 @@ PanelWindow {
         if (s < 65) return "Medium"; return "Strong"
     }
 
-    // Helper: pick the right wifi icon asset for current state
+    // helper- pick the right wifi icon asset for current state
     function wifiIcon() {
         if (!wifiRadioOn)    return "assets/icons/wifi-off.svg"
         if (!wifiConnected)  return "assets/icons/signal-wifi-statusbar-not-connected.svg"
@@ -117,7 +113,7 @@ PanelWindow {
         return "assets/icons/network-wifi-1-bar.svg"
     }
 
-    // Helper: subtitle text for the wifi tile
+    // helper - subtitle text for the wifi tile
     function wifiSubtitle() {
         if (!wifiRadioOn)    return "Off"
         if (!wifiConnected)  return "Not connected"
@@ -125,10 +121,9 @@ PanelWindow {
         return sigLabel(wifiSignal)
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  PROCESSES
-    // ══════════════════════════════════════════════════════════════════════
-    // Comprehensive wifi status: radio state, active connection, connectivity
+    
+    //  process
+    // comprehensive wifi status: radio state, active connection, connectivity
     property string _wifiStatusBuf: ""
     Process { id: wifiProc; running: false
         command: ["bash", "-c",
@@ -192,7 +187,7 @@ PanelWindow {
     Process { id: briSet;   command:[]; running:false }
     Process { id: powerProc; command:[]; running:false }
 
-    // ── Wi-Fi network scan ──────────────────────────────────────────────
+    // Wi-Fi network scan
     property string _wifiBuf: ""
 
     Process {
@@ -237,7 +232,7 @@ PanelWindow {
         onRunningChanged: { if(!running){ wifiProc.running=true; wifiScanProc.running=true } }
     }
 
-    // ── nmcli connect with password ─────────────────────────────────────────
+    // nmcli connect with password
     property string _wifiPassBuf: ""
     Process {
         id: wifiPassProc
@@ -271,13 +266,11 @@ PanelWindow {
     Timer{interval:5000;repeat:true;running:true;onTriggered:briProc.running=true}
     Component.onCompleted:{wifiProc.running=true;btProc.running=true;volProc.running=true;briProc.running=true}
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  REUSABLE INLINE COMPONENTS
-    // ══════════════════════════════════════════════════════════════════════
+    //reusable components
 
-    // ── WideButton: split-interactive tile ─────────────────────────────
-    //    Icon click  → iconClicked()  (toggle state)
-    //    Card body   → clicked()      (open sub-menu)
+    // wideButton: split-interactive tile
+    //    icon click  → iconClicked()  (toggle state)
+    //    card body   → clicked()      (open sub-menu)
     component WideButton: Rectangle {
         id: wb
         property bool   active:   false
@@ -292,7 +285,7 @@ PanelWindow {
         radius: 18
         color:  active ? root.activeColor : root.inactiveColor
 
-        // Card-body MouseArea (covers everything, lowest z)
+        // card-body MouseArea (covers everything, lowest z)
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
@@ -303,7 +296,7 @@ PanelWindow {
             anchors { fill:parent; leftMargin:16; rightMargin:12 }
             spacing: 10
 
-            // ── Icon circle — separate toggle target (higher z) ──
+            // icon circle — separate toggle target (higher z)
             Rectangle {
                 Layout.preferredWidth:40; Layout.preferredHeight:40; radius:20
                 color: iconArea.containsMouse
@@ -331,7 +324,7 @@ PanelWindow {
                 }
             }
 
-            // ── Labels (clicks fall through to card-body) ──
+            // labels (clicks fall through to card-body)
             ColumnLayout {
                 Layout.fillWidth:true; spacing:1
                 Text {
@@ -347,7 +340,7 @@ PanelWindow {
                 }
             }
 
-            // ── Chevron (clicks fall through to card-body) ──
+            // chevron (clicks fall through to card-body)
             Text {
                 text:"›"; font.pixelSize:20; font.weight:Font.Bold
                 color: wb.active ? root.subtextDark : root.subtextLight
@@ -355,7 +348,7 @@ PanelWindow {
         }
     }
 
-    // ── SliderRow: thick rounded slider with icon + right buttons ────────
+    // sliderRow: thick rounded slider with icon + right buttons
     component SliderRow: Rectangle {
         id: sr
         property string leftIcon: ""
@@ -466,7 +459,7 @@ PanelWindow {
         }
     }
 
-    // ── NetworkItem: single row in Wi-Fi dropdown ───────────────────────
+    // NetworkItem: single row in Wi-Fi dropdown
     component NetworkItem: Rectangle {
         id: ni
         property string ssid:     ""
@@ -553,9 +546,7 @@ PanelWindow {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  MAIN PANEL
-    // ══════════════════════════════════════════════════════════════════════
+    //main panel
     Rectangle {
         id: panel
         z: 10
@@ -584,9 +575,9 @@ PanelWindow {
             spacing: 10
             visible: !root.btPanelOpen
 
-            // ──────────────────────────────────────────────────────────────
-            //  TILES: Wi-Fi + Bluetooth  (side by side)
-            // ──────────────────────────────────────────────────────────────
+            
+            //  tiles: Wi-Fi + Bluetooth  (side by side)
+            
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
@@ -627,9 +618,9 @@ PanelWindow {
                 }
             }
 
-            // ──────────────────────────────────────────────────────────────
-            //  TILES: Screen capture + Do not disturb (side by side)
-            // ──────────────────────────────────────────────────────────────
+            
+            //  tiles: screen capture + do not disturb (side by side)
+            
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
@@ -672,9 +663,8 @@ PanelWindow {
                 }
             }
 
-            // ──────────────────────────────────────────────────────────────
-            //  WI-FI DROPDOWN
-            // ──────────────────────────────────────────────────────────────
+
+            //wifi dropdow menu
             Rectangle {
                 id: wifiDropdown
                 Layout.fillWidth: true
@@ -696,7 +686,7 @@ PanelWindow {
                     }
                     spacing: 2
 
-                    // Known Networks
+                    // known networks list
                     Text {
                         text: "Known networks"
                         font.pixelSize:11; font.family:"Google Sans"; font.weight:Font.SemiBold
@@ -718,7 +708,7 @@ PanelWindow {
                         }
                     }
 
-                    // Separator
+                    // separator
                     Rectangle {
                         Layout.fillWidth:true; Layout.topMargin:4; Layout.bottomMargin:4
                         Layout.leftMargin:8; Layout.rightMargin:8
@@ -726,7 +716,7 @@ PanelWindow {
                         visible: root.knownNetworks.length > 0 && root.unknownNetworks.length > 0
                     }
 
-                    // Unknown Networks
+                    // unknown networks list
                     Text {
                         text: "Unknown networks"
                         font.pixelSize:11; font.family:"Google Sans"; font.weight:Font.SemiBold
@@ -749,7 +739,7 @@ PanelWindow {
                         }
                     }
 
-                    // Empty state
+                    // empty state
                     Text {
                         visible: root.knownNetworks.length === 0 && root.unknownNetworks.length === 0
                         text: "Scanning for networks…"
@@ -761,9 +751,7 @@ PanelWindow {
                 }
             }
 
-            // ──────────────────────────────────────────────────────────────
-            //  VOLUME SLIDER
-            // ──────────────────────────────────────────────────────────────
+            //volume slider
             SliderRow {
                 leftIcon:  "assets/icons/volume-up.svg"
                 rightIcon: "assets/icons/music-note.svg"
@@ -775,9 +763,7 @@ PanelWindow {
                 }
             }
 
-            // ──────────────────────────────────────────────────────────────
-            //  BRIGHTNESS SLIDER
-            // ──────────────────────────────────────────────────────────────
+            //brightness slider (currently broken)
             SliderRow {
                 leftIcon:  "assets/icons/brightness-5.svg"
                 rightIcon: "assets/icons/wb-sunny.svg"
@@ -789,9 +775,9 @@ PanelWindow {
                 }
             }
 
-            // ──────────────────────────────────────────────────────────────
-            //  FOOTER: Power + Settings
-            // ──────────────────────────────────────────────────────────────
+            
+            //  footer: Power + Settings
+            
             RowLayout {
                 Layout.fillWidth: true
                 Layout.topMargin: 4
@@ -862,9 +848,7 @@ PanelWindow {
                 }
             }
 
-            // ──────────────────────────────────────────────────────────────
-            //  POWER MENU DROPDOWN
-            // ──────────────────────────────────────────────────────────────
+            //turn off/restart/sleep/log-out list  
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: root.powerMenuOpen ? powerMenuCol.implicitHeight + 16 : 0
@@ -885,7 +869,7 @@ PanelWindow {
                     }
                     spacing: 0
 
-                    // ── Inline component: single power menu row ──────
+                    // inline component: single power menu row
                     Repeater {
                         model: [
                             { icon: "assets/icons/power-settings-new.svg", label: "Выключить",     cmd: "systemctl poweroff" },
@@ -947,9 +931,7 @@ PanelWindow {
             Item { implicitHeight: 2 }
         }
 
-        // ══════════════════════════════════════════════════════════════
-        //  BLUETOOTH SUB-MENU PANEL
-        // ══════════════════════════════════════════════════════════════
+        //bluetooth sub menu panel (dont work)
         ColumnLayout {
             id: btCol
             visible: root.btPanelOpen
@@ -960,12 +942,12 @@ PanelWindow {
             }
             spacing: 10
 
-            // ── Header: Back  |  "Bluetooth"  |  Settings gear ──
+            // header: back  |  "Bluetooth"  |  settings gear ──
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 0
 
-                // Back button
+                // back button
                 Rectangle {
                     implicitWidth:36; implicitHeight:36; radius:18
                     color: backArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
@@ -1001,7 +983,7 @@ PanelWindow {
 
                 Item { Layout.fillWidth: true }
 
-                // Settings gear
+                // settings gear
                 Rectangle {
                     implicitWidth:36; implicitHeight:36; radius:18
                     color: gearArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
@@ -1026,7 +1008,7 @@ PanelWindow {
                 }
             }
 
-            // ── Main toggle card ─────────────────────────────────────
+            // main toggle card
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: 56
@@ -1064,7 +1046,7 @@ PanelWindow {
                         Layout.fillWidth: true
                     }
 
-                    // Toggle switch
+                    // toogle switch
                     Rectangle {
                         id: btSwitch
                         implicitWidth: 44; implicitHeight: 24; radius: 12
@@ -1094,7 +1076,7 @@ PanelWindow {
                 }
             }
 
-            // ── Device list card ─────────────────────────────────────
+            //device list card
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: btDeviceCol.implicitHeight + 16
@@ -1110,7 +1092,7 @@ PanelWindow {
                     }
                     spacing: 0
 
-                    // "+ Pair new device" row
+                    // pair new device
                     Rectangle {
                         Layout.fillWidth: true
                         implicitHeight: 44; radius: 12
@@ -1157,7 +1139,7 @@ PanelWindow {
                         }
                     }
 
-                    // Separator
+                    //separator
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: 14; Layout.rightMargin: 14
@@ -1165,7 +1147,7 @@ PanelWindow {
                         color: Qt.rgba(1,1,1,0.06)
                     }
 
-                    // Empty state placeholder
+                    //empty state placeholder
                     Item {
                         Layout.fillWidth: true
                         implicitHeight: 52
@@ -1184,10 +1166,7 @@ PanelWindow {
             Item { implicitHeight: 2 }
         }
     }
-
-    // ══════════════════════════════════════════════════════════════════════
     //  WI-FI PASSWORD POPUP
-    // ══════════════════════════════════════════════════════════════════════
     Rectangle {
         id: wifiPassOverlay
         anchors.fill: parent
@@ -1208,8 +1187,7 @@ PanelWindow {
             onTriggered: wifiPassField.forceActiveFocus()
         }
 
-        // Catch any key press when focus is NOT on the TextInput → close
-        focus: visible
+        // catch any key press when focus is NOT on the TextInput > close
         Keys.onPressed: function(event) {
             if (!wifiPassField.activeFocus) {
                 root.wifiPassVisible = false
@@ -1219,7 +1197,7 @@ PanelWindow {
             }
         }
 
-        // ── Dismiss on backdrop click (outside the card) ────────────────
+        // dismiss on backdrop click (outside the card)
         MouseArea {
             anchors.fill: parent
             onClicked: {
@@ -1229,7 +1207,7 @@ PanelWindow {
             }
         }
 
-        // ── Password card (positioned near the panel in top-right) ──────
+        // password card (positioned near the panel in top-right)
         Rectangle {
             id: wifiPassCard
             z: 10
@@ -1244,7 +1222,7 @@ PanelWindow {
             border.color: Qt.rgba(1, 1, 1, 0.07)
             border.width: 1
 
-            // Stop clicks from propagating to overlay dismiss; re-focus field
+            // stop clicks from propagating to overlay dismiss; re-focus field
             MouseArea {
                 anchors.fill: parent
                 onClicked: wifiPassField.forceActiveFocus()
@@ -1259,7 +1237,7 @@ PanelWindow {
                 }
                 spacing: 0
 
-                // ── Lock icon ────────────────────────────────────────
+                // lock icon
                 Item {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: 12
@@ -1285,7 +1263,7 @@ PanelWindow {
                     }
                 }
 
-                // ── Network name ─────────────────────────────────────
+                // network name
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: 4
@@ -1306,7 +1284,7 @@ PanelWindow {
                     color: root.subtextLight
                 }
 
-                // ── Password field ────────────────────────────────────
+                //password input fieldd
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.bottomMargin: 8
@@ -1342,7 +1320,7 @@ PanelWindow {
                             }
                         }
 
-                        // Eye toggle button
+                        //eye toggle button
                         Rectangle {
                             id: showPassBtn
                             property bool showPass: false
@@ -1375,7 +1353,7 @@ PanelWindow {
                     }
                 }
 
-                // ── Error message ─────────────────────────────────────
+                //error mesage
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: root.wifiPassError !== "" ? 12 : 0
@@ -1385,7 +1363,7 @@ PanelWindow {
                     visible: root.wifiPassError !== ""
                 }
 
-                // ── Connecting indicator ──────────────────────────────
+                //connecting indicator
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: 12
@@ -1395,7 +1373,7 @@ PanelWindow {
                     visible: wifiPassProc.running
                 }
 
-                // ── Buttons row ───────────────────────────────────────
+                //buttons row
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
@@ -1425,7 +1403,7 @@ PanelWindow {
                         }
                     }
 
-                    // Connect
+                    //connect
                     Rectangle {
                         id: connectBtn
                         function doConnect() {

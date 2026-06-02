@@ -1,4 +1,4 @@
-// DockSeparator.qml — вертикальный разделитель
+// DockSeparator.qml — vertical diveder
 import QtQuick
 
 Item {

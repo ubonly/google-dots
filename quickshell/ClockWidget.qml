@@ -1,4 +1,4 @@
-// ClockWidget.qml — часы + дата
+// ClockWidget.qml — time + date
 import Quickshell
 import QtQuick
 import QtQuick.Layouts
