@@ -1,1 +1,0 @@
-# god gave me divine intellect
