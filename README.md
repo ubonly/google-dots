@@ -4,62 +4,34 @@ A floating dock and desktop environment layer for Hyprland built with [Quickshel
 
 ## Installation
 
-### 1. Dependencies
+The easiest way to install the configuration, dependencies, and configure Hyprland is to use the provided setup script.
 
-Make sure you have all required dependencies installed for the widgets to function properly.
-
-```bash
-# Core Quickshell (from AUR)
-yay -S quickshell-git
-
-# Fonts and Icons
-sudo pacman -S ttf-roboto
-yay -S ttf-material-symbols-variable-git   # Material Symbols icons
-yay -S ttf-google-sans                     # Google Sans font (primary UI font)
-yay -S ttf-inter                           # Inter font (fallback)
-
-# System Utilities (for Quick Settings & Dock)
-sudo pacman -S jq python networkmanager bluez-utils wireplumber
-
-# Screen Capture Tools
-yay -S grim hyprshot wl-screenrec wl-clipboard
-
-# Clipboard Manager
-sudo pacman -S cliphist
-```
-
-### 2. Copy the Configuration
-
-Copy this repository to your Quickshell config directory:
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/ubonly/google-dots.git ~/google-dots
-cp -r ~/google-dots/quickshell ~/.config/quickshell
+cd ~/google-dots
 ```
 
-### 3. Configure Hyprland (`hyprland.conf`)
+### 2. Run the installer script
 
-Add the following rules to your `~/.config/hypr/hyprland.conf`:
-
-```ini
-# Blur and transparency for Quickshell overlays
-layerrule = blur, quickshell
-layerrule = ignorealpha 0.15, quickshell
-layerrule = xray 0, quickshell
-
-# Autostart
-exec-once = quickshell
-```
-
-### 4. Running Quickshell
+Make the script executable and run it. It will automatically detect your AUR helper (`yay` or `paru`), install all dependencies, copy the configuration files to `~/.config/quickshell`, and append the necessary rules to your `hyprland.conf`:
 
 ```bash
-# Start manually for testing
-quickshell
-
-# Or if your config is in a different location:
-quickshell -p ~/.config/quickshell
+chmod +x install.sh
+./install.sh
 ```
+
+### 3. Manual Steps (Optional / Reference)
+
+If you prefer to install things manually, here is what the script does:
+
+#### Packages installed (via AUR helper):
+- **Core & Fonts**: `quickshell-git`, `ttf-roboto`, `ttf-material-symbols-variable-git`, `ttf-google-sans`, `ttf-inter`
+- **System Integration**: `jq`, `python`, `networkmanager`, `bluez-utils`, `wireplumber`
+- **Screen Capture & Clipboard**: `grim`, `hyprshot`, `wl-screenrec`, `wl-clipboard`, `cliphist`
+
+#### Configuration added to `~/.config/hypr/hyprland.conf`:
 
 ## File Structure
 
