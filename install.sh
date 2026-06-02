@@ -1,40 +1,46 @@
 #!/usr/bin/env bash
 
-# Exit on error
+# выходим при любой ошибке
 set -e
 
 echo "=== Quickshell Dock Setup Script ==="
 
-# 1. Detect AUR Helper
+# 1. ищем aur хелпер
 AUR_HELPER=""
-if command -v yay &> /dev/null; then
-    AUR_HELPER="yay"
-elif command -v paru &> /dev/null; then
-    AUR_HELPER="paru"
-else
-    echo "Error: Neither 'yay' nor 'paru' was found. Please install an AUR helper first."
+HELPERS=("yay" "paru" "pikaur" "aura" "trizen" "pakku")
+
+for helper in "${HELPERS[@]}"; do
+    if command -v "$helper" &> /dev/null; then
+        AUR_HELPER="$helper"
+        break
+    fi
+done
+
+if [ -z "$AUR_HELPER" ]; then
+    echo "Error: No supported AUR helper found (checked: yay, paru, pikaur, aura, trizen, pakku)."
+    echo "Please install one of them first to install AUR dependencies."
     exit 1
 fi
 
 echo "Using AUR helper: $AUR_HELPER"
 
-# 2. Install dependencies
+# 2. ставим пакеты
 PACKAGES=(
-    # Core & Fonts
+    # сам квикшелл и шрифты
     "quickshell-git"
     "ttf-roboto"
     "ttf-material-symbols-variable-git"
     "ttf-google-sans"
     "ttf-inter"
     
-    # System Integration
+    # системные штуки
     "jq"
     "python"
     "networkmanager"
     "bluez-utils"
     "wireplumber"
     
-    # Screen Capture & Clipboard
+    # утилиты для скринов и буфера
     "grim"
     "hyprshot"
     "wl-screenrec"
@@ -45,24 +51,24 @@ PACKAGES=(
 echo "Installing dependencies..."
 $AUR_HELPER -S --needed --noconfirm "${PACKAGES[@]}"
 
-# 3. Configure Hyprland
+# 3. настраиваем hyprland
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
 if [ -f "$HYPR_CONF" ]; then
     echo "Configuring Hyprland..."
     
-    # Check if config already exists
+    # проверяем если правила уже прописаны
     if grep -q "layerrule = blur, quickshell" "$HYPR_CONF"; then
         echo "Hyprland rules for Quickshell already exist in $HYPR_CONF"
     else
         echo "Appending Quickshell rules to $HYPR_CONF..."
         cat << 'EOF' >> "$HYPR_CONF"
 
-# Blur and transparency for quickshell
+# размытие и прозрачность для квикшелла
 layerrule = blur, quickshell
 layerrule = ignorealpha 0.15, quickshell
 layerrule = xray 0, quickshell
 
-# Autostart quickshell
+# автозапуск
 exec-once = quickshell
 EOF
         echo "Hyprland configuration updated successfully."
@@ -71,7 +77,7 @@ else
     echo "Warning: Hyprland configuration not found at $HYPR_CONF. Skipping Hyprland configuration."
 fi
 
-# 4. Copy configuration files to ~/.config/quickshell
+# 4. копируем конфиг в ~/.config/quickshell
 CONFIG_DIR="$HOME/.config/quickshell"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
