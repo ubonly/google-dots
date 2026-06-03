@@ -14,6 +14,9 @@ Rectangle {
     property string appIcon:      notification ? (notification.appIcon  || "")             : ""
     property var    notifTime:    notification ? notification.time : new Date()
 
+    // collapsed by default
+    property bool expanded: false
+
     // mocha palette
     readonly property color cBg:        "#1c1c1f"
     readonly property color cBgHover:   "#26262a"
@@ -22,12 +25,15 @@ Rectangle {
     readonly property color cTextBody:  "#c8c8cc"
     readonly property color cTextTitle: "#ffffff"
 
-    // container
+    // container — height animates smoothly
     implicitHeight: cardLayout.implicitHeight + 28
+    Behavior on implicitHeight { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
     radius: 20
     color: cBg
     border.color: Qt.rgba(1, 1, 1, 0.04)
     border.width: 1
+    clip: true
 
     // fade-in animation when added to listview
     opacity: 0
@@ -67,7 +73,7 @@ Rectangle {
         anchors.margins: 14
         spacing: 6
 
-        // header
+        // header row — always visible
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
@@ -98,15 +104,24 @@ Rectangle {
                 color: card.cTextDim
                 font { pixelSize: 12; family: "Google Sans"; weight: Font.Medium }
                 elide: Text.ElideRight
-                Layout.maximumWidth: 160
+                Layout.maximumWidth: 120
             }
 
             // dot separator
+            Text { text: "•"; color: card.cTextDim; font.pixelSize: 12 }
+
+            // when collapsed: show summary text inline (sender / message title)
             Text {
-                text: "•"
-                color: card.cTextDim
-                font.pixelSize: 12
+                text: card.summary
+                color: card.cTextTitle
+                font { pixelSize: 12; family: "Google Sans"; weight: Font.Medium }
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+                visible: !card.expanded
             }
+
+            // spacer — only when expanded (pushes time and chevron right)
+            Item { Layout.fillWidth: true; visible: card.expanded }
 
             // time
             Text {
@@ -115,10 +130,7 @@ Rectangle {
                 font { pixelSize: 12; family: "Google Sans" }
             }
 
-            // spacer pushes chevron to the right edge
-            Item { Layout.fillWidth: true }
-
-            // chevron-up round button
+            // chevron button — rotates: ∧ expanded, ∨ collapsed
             Rectangle {
                 Layout.preferredWidth: 22
                 Layout.preferredHeight: 22
@@ -134,11 +146,15 @@ Rectangle {
                     source: "assets/icons/expand-less.svg"
                     smooth: true
                     visible: false
+                    rotation: card.expanded ? 0 : 180
+                    Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
                 ColorOverlay {
                     anchors.fill: chevIcon
                     source: chevIcon
                     color: card.cTextDim
+                    rotation: card.expanded ? 0 : 180
+                    Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
 
                 MouseArea {
@@ -146,15 +162,19 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    onClicked: card.expanded = !card.expanded
                 }
             }
         }
 
-        // body
+        // expanded body
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 2
             spacing: 2
+            visible: card.expanded
+            opacity: card.expanded ? 1.0 : 0.0
+            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
             // summary (title)
             Text {
