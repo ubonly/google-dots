@@ -94,7 +94,7 @@ PanelWindow {
 
     function openRegionImmediate() {
         // Run grimblast which handles freezing and selection natively without our UI
-        captureProc.command = ["bash", "-c", "grimblast --freeze copy area"]
+        captureProc.command = ["bash", "-c", "mkdir -p \"$HOME/Pictures\"; grimblast --freeze copysave area \"$HOME/Pictures/Screenshot_$(date +%Y-%m-%d_%H-%M-%S).png\""]
         captureProc.running = true
     }
 
