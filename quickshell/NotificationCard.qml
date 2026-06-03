@@ -104,24 +104,11 @@ Rectangle {
                 color: card.cTextDim
                 font { pixelSize: 12; family: "Google Sans"; weight: Font.Medium }
                 elide: Text.ElideRight
-                Layout.maximumWidth: 120
+                Layout.maximumWidth: 160
             }
 
             // dot separator
             Text { text: "•"; color: card.cTextDim; font.pixelSize: 12 }
-
-            // when collapsed: show summary text inline (sender / message title)
-            Text {
-                text: card.summary
-                color: card.cTextTitle
-                font { pixelSize: 12; family: "Google Sans"; weight: Font.Medium }
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-                visible: !card.expanded
-            }
-
-            // spacer — only when expanded (pushes time and chevron right)
-            Item { Layout.fillWidth: true; visible: card.expanded }
 
             // time
             Text {
@@ -130,6 +117,9 @@ Rectangle {
                 font { pixelSize: 12; family: "Google Sans" }
             }
 
+            // spacer pushes chevron to the right edge
+            Item { Layout.fillWidth: true }
+
             // chevron button — rotates: ∧ expanded, ∨ collapsed
             Rectangle {
                 Layout.preferredWidth: 22
@@ -137,6 +127,8 @@ Rectangle {
                 radius: 11
                 color: chevArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
                 Behavior on color { ColorAnimation { duration: 120 } }
+                // only show chevron if there's a body text to expand
+                visible: card.bodyText.length > 0
 
                 Image {
                     id: chevIcon
@@ -167,16 +159,13 @@ Rectangle {
             }
         }
 
-        // expanded body
+        // body layout
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 2
             spacing: 2
-            visible: card.expanded
-            opacity: card.expanded ? 1.0 : 0.0
-            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
-            // summary (title)
+            // summary (title) — always visible
             Text {
                 Layout.fillWidth: true
                 text: card.summary
@@ -188,7 +177,7 @@ Rectangle {
                 visible: text.length > 0
             }
 
-            // body
+            // body — visible only when expanded
             Text {
                 Layout.fillWidth: true
                 text: card.bodyText
@@ -196,7 +185,9 @@ Rectangle {
                 font { pixelSize: 13; family: "Google Sans" }
                 wrapMode: Text.WordWrap
                 textFormat: Text.PlainText
-                visible: text.length > 0
+                visible: card.expanded && text.length > 0
+                opacity: card.expanded ? 1.0 : 0.0
+                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
             }
         }
     }
