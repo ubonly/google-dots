@@ -18,10 +18,16 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell-capture"
     property bool isCapturing: captureProc.running
-    WlrLayershell.keyboardFocus: (isOpen && !isCapturing) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (visible && !isCapturing) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    visible: isOpen
+    visible: isOpen && freezeImage !== ""
     color: "transparent"
+
+    onVisibleChanged: {
+        if (visible) {
+            focusCatcher.forceActiveFocus()
+        }
+    }
 
     property string freezeImage: ""
 
