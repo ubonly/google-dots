@@ -120,6 +120,7 @@ PanelWindow {
             height: 40
 
             Text {
+                id: titleText
                 anchors { left: parent.left; verticalCenter: parent.verticalCenter }
                 text: "Notifications"
                 color: Qt.rgba(1, 1, 1, 0.92)
@@ -130,12 +131,13 @@ PanelWindow {
             Rectangle {
                 id: clearBtn
                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                width: clearRow.implicitWidth + 20
+                width: Math.min(clearRow.implicitWidth + 20, parent.width - titleText.implicitWidth - 12)
                 height: 28
                 radius: 14
                 color: clearArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
                 Behavior on color { ColorAnimation { duration: 120 } }
                 visible: root.history.length > 0
+                clip: true
 
                 Row {
                     id: clearRow
@@ -162,6 +164,7 @@ PanelWindow {
                         text: "Clear all"
                         color: Qt.rgba(1, 1, 1, 0.85)
                         font { family: "Google Sans"; pixelSize: 12; weight: Font.Medium }
+                        elide: Text.ElideRight
                     }
                 }
 
