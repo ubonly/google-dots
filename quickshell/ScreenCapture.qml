@@ -26,7 +26,6 @@ PanelWindow {
     onIsOpenChanged: {
         if (!isOpen) {
             isDragging = false
-            frozenImageFile = ""
         }
     }
 
@@ -66,6 +65,7 @@ PanelWindow {
             if (captureMode === "fullscreen") return "mkdir -p \"$HOME/Pictures\"; hyprshot -s -m output -m \"" + capture.screenRef.name + "\" -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
             if (captureMode === "window")     return "mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
             if (captureMode === "region")     return "mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m region -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
+            if (captureMode === "grimblast-region") return "mkdir -p \"$HOME/Pictures\"; grimblast --freeze copysave area \"$HOME/Pictures/Screenshot_" + ts + ".png\""
         } else {
             var vid = "$HOME/Videos/Screenrecord_" + ts + ".mp4"
             if (captureMode === "fullscreen") return "mkdir -p \"$HOME/Videos\"; wl-screenrec -o \"" + capture.screenRef.name + "\" -f \"" + vid + "\""
@@ -86,34 +86,21 @@ PanelWindow {
     }
 
     function doCapture(hideFirst) {
-        if (hideFirst) capture.isOpen = false
+        if (hideFirst && captureMode !== "grimblast-region") capture.isOpen = false
         var cmd = getCommand()
         if (!cmd) return
         captureProc.command = ["bash", "-c", cmd]
         captureProc.running = true
     }
 
-    property string frozenImageFile: ""
-    property bool isPreparingFreeze: false
-    property bool isWaitingForImage: false
-
-    Process {
-        id: freezeProc
-        command: ["bash", "-c", "grim -o \"" + capture.screenRef.name + "\" \"/tmp/qs_freeze_" + capture.screenRef.name + ".png\""]
-        running: false
-        onRunningChanged: {
-            if (!running && isPreparingFreeze) {
-                isPreparingFreeze = false
-                isWaitingForImage = true
-                frozenImageFile = "file:///tmp/qs_freeze_" + capture.screenRef.name + ".png?t=" + new Date().getTime()
-            }
-        }
-    }
-
     function openRegionImmediate() {
-        if (capture.isOpen) return
-        isPreparingFreeze = true
-        freezeProc.running = true
+        captureType = "screenshot"
+        captureMode = "grimblast-region"
+        isOpen = true
+        var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
+        var cmd = "mkdir -p \"$HOME/Pictures\"; grimblast --freeze copysave area \"$HOME/Pictures/Screenshot_" + ts + ".png\""
+        captureProc.command = ["bash", "-c", cmd]
+        captureProc.running = true
     }
 
     function openFullscreenWait() {
@@ -127,8 +114,10 @@ PanelWindow {
         if (isOpen) {
             isOpen = false
         } else {
-            isPreparingFreeze = true
-            freezeProc.running = true
+            captureType = "screenshot"
+            captureMode = "grimblast-region"
+            isOpen = true
+            focusCatcher.forceActiveFocus()
         }
     }
 
@@ -145,25 +134,6 @@ PanelWindow {
         anchors.fill: parent
         visible: capture.isOpen && (capture.captureMode === "region" || capture.captureMode === "fullscreen" || capture.captureMode === "window")
         
-        Image {
-            id: freezeImage
-            anchors.fill: parent
-            source: capture.frozenImageFile
-            visible: capture.captureMode === "region" && capture.frozenImageFile !== ""
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: false
-            cache: false
-            onStatusChanged: {
-                if (status === Image.Ready && capture.isWaitingForImage) {
-                    capture.isWaitingForImage = false
-                    capture.captureType = "screenshot"
-                    capture.captureMode = "region"
-                    capture.isOpen = true
-                    capture.focusCatcher.forceActiveFocus()
-                }
-            }
-        }
-
         // Base dimming if not dragging
         Rectangle {
             anchors.fill: parent
@@ -193,6 +163,7 @@ PanelWindow {
     // ── Interaction / Drawing ─────────────────────────────────────────────
     MouseArea {
         anchors.fill: parent
+        enabled: capture.captureMode === "region" || capture.captureMode === "fullscreen" || capture.captureMode === "window"
         cursorShape: capture.captureMode === "region" ? Qt.CrossCursor : Qt.ArrowCursor
 
         onPressed: function(mouse) {
