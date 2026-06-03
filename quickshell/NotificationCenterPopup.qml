@@ -111,31 +111,28 @@ PanelWindow {
         Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
         // header
-        RowLayout {
+        Item {
             id: headerSection
             anchors {
                 top: parent.top; left: parent.left; right: parent.right
                 topMargin: 12; leftMargin: 16; rightMargin: 16
             }
             height: 40
-            spacing: 8
 
             Text {
                 id: titleText
-                Layout.fillWidth: true
-                verticalAlignment: Text.AlignVCenter
+                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
                 text: "Notifications"
                 color: Qt.rgba(1, 1, 1, 0.92)
                 font { family: "Google Sans"; pixelSize: 15; weight: Font.Medium }
-                elide: Text.ElideRight
             }
 
             // clear all button
             Rectangle {
                 id: clearBtn
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: clearRow.implicitWidth + 20
-                implicitHeight: 28
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                width: clearLbl.implicitWidth + 40 // icon(14) + spacing(6) + padding(20)
+                height: 28
                 radius: 14
                 color: clearArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
                 Behavior on color { ColorAnimation { duration: 120 } }
