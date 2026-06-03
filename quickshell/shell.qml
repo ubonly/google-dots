@@ -59,8 +59,8 @@ ShellRoot {
     }
 
     function _openRegionImmediate() {
-        for (var i = 0; i < _captures.length; i++) {
-            if (_captures[i]) _captures[i].openRegionImmediate()
+        if (_captures.length > 0 && _captures[0]) {
+            _captures[0].openRegionImmediate()
         }
     }
 

@@ -93,11 +93,8 @@ PanelWindow {
     }
 
     function openRegionImmediate() {
-        // Delegate entirely to hyprshot which freezes the screen natively with -z
-        captureType = "screenshot"
-        captureMode = "region"
-        captureProc.command = ["bash", "-c",
-            "mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m region -o \"$HOME/Pictures\" -f Screenshot_$(date +%Y-%m-%d_%H-%M-%S).png"]
+        // Run grimblast which handles freezing and selection natively without our UI
+        captureProc.command = ["bash", "-c", "grimblast --freeze copy area"]
         captureProc.running = true
     }
 
