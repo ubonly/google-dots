@@ -111,33 +111,35 @@ PanelWindow {
         Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
         // header
-        Item {
+        RowLayout {
             id: headerSection
             anchors {
                 top: parent.top; left: parent.left; right: parent.right
                 topMargin: 12; leftMargin: 16; rightMargin: 16
             }
             height: 40
+            spacing: 8
 
             Text {
                 id: titleText
-                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                Layout.fillWidth: true
+                verticalAlignment: Text.AlignVCenter
                 text: "Notifications"
                 color: Qt.rgba(1, 1, 1, 0.92)
                 font { family: "Google Sans"; pixelSize: 15; weight: Font.Medium }
+                elide: Text.ElideRight
             }
 
             // clear all button
             Rectangle {
                 id: clearBtn
-                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                width: Math.min(clearRow.implicitWidth + 20, parent.width - titleText.implicitWidth - 12)
-                height: 28
+                Layout.alignment: Qt.AlignVCenter
+                implicitWidth: clearRow.implicitWidth + 20
+                implicitHeight: 28
                 radius: 14
                 color: clearArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
                 Behavior on color { ColorAnimation { duration: 120 } }
                 visible: root.history.length > 0
-                clip: true
 
                 Row {
                     id: clearRow
@@ -164,7 +166,6 @@ PanelWindow {
                         text: "Clear all"
                         color: Qt.rgba(1, 1, 1, 0.85)
                         font { family: "Google Sans"; pixelSize: 12; weight: Font.Medium }
-                        elide: Text.ElideRight
                     }
                 }
 
