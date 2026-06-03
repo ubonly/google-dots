@@ -18,35 +18,47 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell-capture"
     property bool isCapturing: captureProc.running
-    WlrLayershell.keyboardFocus: (visible && !isCapturing) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (isOpen && !isCapturing) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    visible: isOpen && freezeImage !== ""
+    visible: isOpen
     color: "transparent"
 
-    onVisibleChanged: {
-        if (visible) {
-            focusCatcher.forceActiveFocus()
-        }
-    }
-
+    // ── Pre-captured freeze image ─────────────────────────────────────────
+    // grim runs silently in the background every 3 seconds so the freeze
+    // frame is always ready instantly when the tool opens.
+    property string freezeImagePath: "/tmp/qs_freeze_" + (capture.screenRef ? capture.screenRef.name : "default") + ".png"
     property string freezeImage: ""
 
     Process {
-        id: freezeProc
-        command: ["bash", "-c", "grim -o \"" + (capture.screenRef ? capture.screenRef.name : "") + "\" \"/tmp/qs_freeze_" + (capture.screenRef ? capture.screenRef.name : "default") + ".png\""]
+        id: preCaptureProc
+        command: ["bash", "-c",
+            "grim -o '" + (capture.screenRef ? capture.screenRef.name : "") + "' '" + capture.freezeImagePath + "' 2>/dev/null"]
+        running: false
         onRunningChanged: {
-            if (!running && capture.isOpen) {
-                freezeImage = "file:///tmp/qs_freeze_" + (capture.screenRef ? capture.screenRef.name : "default") + ".png?t=" + new Date().getTime()
+            if (!running && !capture.isOpen) {
+                // Update the path with a timestamp to bust the image cache
+                capture.freezeImage = "file://" + capture.freezeImagePath + "?t=" + new Date().getTime()
             }
         }
     }
 
+    // Fire immediately and then every 3 seconds while idle
+    Timer {
+        id: preCaptureTimer
+        interval: 3000
+        repeat: true
+        running: !capture.isOpen && !captureProc.running
+        triggeredOnStart: true
+        onTriggered: {
+            if (!preCaptureProc.running) preCaptureProc.running = true
+        }
+    }
+
     onIsOpenChanged: {
-        if (isOpen) {
-            freezeImage = ""
-            freezeProc.running = true
-        } else {
+        if (!isOpen) {
             isDragging = false
+            // Update freeze image after closing so it's fresh for next open
+            Qt.callLater(function() { if (!preCaptureProc.running) preCaptureProc.running = true })
         }
     }
 
