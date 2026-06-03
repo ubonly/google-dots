@@ -131,39 +131,38 @@ PanelWindow {
             Rectangle {
                 id: clearBtn
                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                width: clearLbl.implicitWidth + 40 // icon(14) + spacing(6) + padding(20)
+                width: 12 + 14 + 6 + clearLbl.implicitWidth + 12 // leftMargin + icon + spacing + text + rightMargin
                 height: 28
                 radius: 14
                 color: clearArea.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
                 Behavior on color { ColorAnimation { duration: 120 } }
                 visible: root.history.length > 0
 
-                Row {
-                    id: clearRow
-                    anchors.centerIn: parent
-                    spacing: 6
+                Item {
+                    id: clearIconContainer
+                    anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                    width: 14; height: 14
 
                     Image {
                         id: clearIcon
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 14; height: 14
+                        anchors.fill: parent
                         sourceSize: Qt.size(14, 14)
                         source: "assets/icons/clear-all.svg"
                         visible: false
                     }
                     ColorOverlay {
-                        anchors.fill: clearIcon
+                        anchors.fill: parent
                         source: clearIcon
                         color: "#cdd6f4"
                     }
+                }
 
-                    Text {
-                        id: clearLbl
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Clear all"
-                        color: Qt.rgba(1, 1, 1, 0.85)
-                        font { family: "Google Sans"; pixelSize: 12; weight: Font.Medium }
-                    }
+                Text {
+                    id: clearLbl
+                    anchors { left: clearIconContainer.right; leftMargin: 6; verticalCenter: parent.verticalCenter }
+                    text: "Clear all"
+                    color: Qt.rgba(1, 1, 1, 0.85)
+                    font { family: "Google Sans"; pixelSize: 12; weight: Font.Medium }
                 }
 
                 MouseArea {
