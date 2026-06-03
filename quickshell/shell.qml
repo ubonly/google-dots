@@ -260,7 +260,7 @@ ShellRoot {
 
             Process {
                 id: recordCheckProc
-                command: ["bash", "-c", "pgrep -x wl-screenrec >/dev/null && echo 'yes' || echo 'no'"]
+                command: ["bash", "-c", "pgrep wl-screenrec >/dev/null && echo 'yes' || echo 'no'"]
                 running: true
                 stdout: SplitParser {
                     onRead: function(line) {
