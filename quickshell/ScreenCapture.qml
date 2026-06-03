@@ -23,6 +23,12 @@ PanelWindow {
     visible: isOpen
     color: "transparent"
 
+    onIsOpenChanged: {
+        if (!isOpen) {
+            isDragging = false
+        }
+    }
+
     // ── State ──────────────────────────────────────────────────────────────
     // "screenshot" or "record"
     property string captureType: "screenshot"
@@ -58,7 +64,7 @@ PanelWindow {
         var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
         if (captureType === "screenshot") {
             var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
-            if (captureMode === "fullscreen") return pre + "grim -o \"" + capture.screenRef.name + "\" \"" + pic + "\" && setsid -f wl-copy --type image/png < \"" + pic + "\""
+            if (captureMode === "fullscreen") return pre + "grim -o \"" + capture.screenRef.name + "\" \"" + pic + "\" && setsid -f wl-copy --type image/png < \"" + pic + "\" >/dev/null 2>&1"
             if (captureMode === "window")     return "sleep 0.4; mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
         } else {
             var vid = "$HOME/Videos/Screenrecord_" + ts + ".mp4"
@@ -103,7 +109,7 @@ PanelWindow {
             var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
             cmd = "mkdir -p \"$HOME/Pictures\"; "
                 + "grim -g \"" + geometry + "\" \"" + pic + "\" && "
-                + "setsid -f wl-copy --type image/png < \"" + pic + "\""
+                + "setsid -f wl-copy --type image/png < \"" + pic + "\" >/dev/null 2>&1"
         } else {
             cmd = "mkdir -p \"$HOME/Videos\"; wl-screenrec -g \"" + geometry + "\" -f \"$HOME/Videos/Screenrecord_" + ts + ".mp4\""
         }
