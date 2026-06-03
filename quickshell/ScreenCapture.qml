@@ -298,7 +298,7 @@ PanelWindow {
             border.width: 1
 
             // Entrance animation
-            opacity: capture.isOpen ? 1.0 : 0.0
+            opacity: (capture.isOpen && !capture.isDragging) ? 1.0 : 0.0
             transformOrigin: Item.Bottom
 
             // Block clicks from dismissing
