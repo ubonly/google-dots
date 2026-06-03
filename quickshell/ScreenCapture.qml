@@ -23,8 +23,23 @@ PanelWindow {
     visible: isOpen
     color: "transparent"
 
+    property string freezeImage: ""
+
+    Process {
+        id: freezeProc
+        command: ["bash", "-c", "grim -o \"" + (capture.screenRef ? capture.screenRef.name : "") + "\" \"/tmp/qs_freeze_" + (capture.screenRef ? capture.screenRef.name : "default") + ".png\""]
+        onRunningChanged: {
+            if (!running && capture.isOpen) {
+                freezeImage = "file:///tmp/qs_freeze_" + (capture.screenRef ? capture.screenRef.name : "default") + ".png?t=" + new Date().getTime()
+            }
+        }
+    }
+
     onIsOpenChanged: {
-        if (!isOpen) {
+        if (isOpen) {
+            freezeImage = ""
+            freezeProc.running = true
+        } else {
             isDragging = false
         }
     }
@@ -159,6 +174,14 @@ PanelWindow {
         Keys.onReturnPressed: capture.doCapture(true)
         Keys.onEnterPressed: capture.doCapture(true)
         Keys.onEscapePressed: capture.isOpen = false
+    }
+
+    // Frozen background image
+    Image {
+        anchors.fill: parent
+        source: capture.freezeImage
+        visible: capture.isOpen && status === Image.Ready
+        cache: false
     }
 
     // ── Dimming and Cutout ────────────────────────────────────────────────
