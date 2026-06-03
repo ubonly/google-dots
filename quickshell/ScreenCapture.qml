@@ -26,6 +26,7 @@ PanelWindow {
     onIsOpenChanged: {
         if (!isOpen) {
             isDragging = false
+            frozenImageFile = ""
         }
     }
 
@@ -92,10 +93,27 @@ PanelWindow {
         captureProc.running = true
     }
 
+    property string frozenImageFile: ""
+    property bool isPreparingFreeze: false
+    property bool isWaitingForImage: false
+
+    Process {
+        id: freezeProc
+        command: ["bash", "-c", "grim -o \"" + capture.screenRef.name + "\" \"/tmp/qs_freeze_" + capture.screenRef.name + ".png\""]
+        running: false
+        onRunningChanged: {
+            if (!running && isPreparingFreeze) {
+                isPreparingFreeze = false
+                isWaitingForImage = true
+                frozenImageFile = "file:///tmp/qs_freeze_" + capture.screenRef.name + ".png?t=" + new Date().getTime()
+            }
+        }
+    }
+
     function openRegionImmediate() {
-        // Run grimblast which handles freezing and selection natively without our UI
-        captureProc.command = ["bash", "-c", "mkdir -p \"$HOME/Pictures\"; grimblast --freeze copysave area \"$HOME/Pictures/Screenshot_$(date +%Y-%m-%d_%H-%M-%S).png\""]
-        captureProc.running = true
+        if (capture.isOpen) return
+        isPreparingFreeze = true
+        freezeProc.running = true
     }
 
     function openFullscreenWait() {
@@ -106,11 +124,11 @@ PanelWindow {
     }
 
     function toggle() {
-        isOpen = !isOpen
         if (isOpen) {
-            captureType = "screenshot"
-            captureMode = "region"
-            focusCatcher.forceActiveFocus()
+            isOpen = false
+        } else {
+            isPreparingFreeze = true
+            freezeProc.running = true
         }
     }
 
@@ -127,6 +145,25 @@ PanelWindow {
         anchors.fill: parent
         visible: capture.isOpen && (capture.captureMode === "region" || capture.captureMode === "fullscreen" || capture.captureMode === "window")
         
+        Image {
+            id: freezeImage
+            anchors.fill: parent
+            source: capture.frozenImageFile
+            visible: capture.captureMode === "region" && capture.frozenImageFile !== ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: false
+            cache: false
+            onStatusChanged: {
+                if (status === Image.Ready && capture.isWaitingForImage) {
+                    capture.isWaitingForImage = false
+                    capture.captureType = "screenshot"
+                    capture.captureMode = "region"
+                    capture.isOpen = true
+                    capture.focusCatcher.forceActiveFocus()
+                }
+            }
+        }
+
         // Base dimming if not dragging
         Rectangle {
             anchors.fill: parent
@@ -185,6 +222,30 @@ PanelWindow {
                 capture.doCustomRegionCapture()
             }
         }
+    }
+
+    function doCustomRegionCapture() {
+        if (selW < 10 || selH < 10) {
+            isOpen = false
+            return
+        }
+        var absX = Math.round(capture.screenRef.x + capture.selX)
+        var absY = Math.round(capture.screenRef.y + capture.selY)
+        var absW = Math.round(capture.selW)
+        var absH = Math.round(capture.selH)
+        var geometry = absX + "," + absY + " " + absW + "x" + absH
+
+        var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
+        var cmd = ""
+        if (captureType === "screenshot") {
+            cmd = "mkdir -p \"$HOME/Pictures\"; grim -g \"" + geometry + "\" \"$HOME/Pictures/Screenshot_" + ts + ".png\" && setsid -f wl-copy --type image/png < \"$HOME/Pictures/Screenshot_" + ts + ".png\" >/dev/null 2>&1"
+        } else {
+            cmd = "mkdir -p \"$HOME/Videos\"; wl-screenrec -g \"" + geometry + "\" -f \"$HOME/Videos/Screenrecord_" + ts + ".mp4\""
+        }
+
+        capture.isOpen = false
+        captureProc.command = ["bash", "-c", cmd]
+        captureProc.running = true
     }
 
     function doCustomRegionCapture() {
