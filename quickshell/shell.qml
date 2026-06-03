@@ -256,6 +256,19 @@ ShellRoot {
             property bool btOn:     false
             property int  volume:   50
             property string kbLayout: "US"
+            property bool isRecording: false
+
+            Process {
+                id: recordCheckProc
+                command: ["bash", "-c", "pgrep -x wl-screenrec >/dev/null && echo 'yes' || echo 'no'"]
+                running: true
+                stdout: SplitParser {
+                    onRead: function(line) {
+                        screenItem.isRecording = (line.trim() === "yes")
+                    }
+                }
+            }
+            Timer { interval: 1000; repeat: true; running: true; onTriggered: recordCheckProc.running = true }
 
             Process {
                 id: wifiBarProc
@@ -429,6 +442,41 @@ ShellRoot {
                             verticalCenter: parent.verticalCenter
                         }
                         spacing: 2
+
+                        // ── Stop Recording Indicator ──────────────────
+                        Rectangle {
+                            id: stopRecordPill
+                            width: 38; height: 38; radius: 19
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Qt.rgba(1, 0.2, 0.2, 0.2)
+                            border.color: Qt.rgba(1, 0.2, 0.2, 0.5)
+                            border.width: 1
+                            visible: screenItem.isRecording
+
+                            SequentialAnimation on opacity {
+                                loops: Animation.Infinite
+                                running: stopRecordPill.visible
+                                NumberAnimation { to: 0.5; duration: 1000; easing.type: Easing.InOutQuad }
+                                NumberAnimation { to: 1.0; duration: 1000; easing.type: Easing.InOutQuad }
+                            }
+
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 12; height: 12
+                                radius: 2
+                                color: Qt.rgba(1, 0.2, 0.2, 0.9)
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    var p = Qt.createQmlObject('import Quickshell.Io 1.0; Process { command: ["killall", "-SIGINT", "wl-screenrec"] }', stopRecordPill, "killProc")
+                                    p.running = true
+                                    screenItem.isRecording = false
+                                }
+                            }
+                        }
 
                     // ── 0. Media Pill ────────────────────────────
                     Rectangle {
