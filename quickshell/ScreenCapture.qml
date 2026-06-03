@@ -54,12 +54,12 @@ PanelWindow {
 
     // ── Commands ──────────────────────────────────────────────────────────
     function getCommand() {
-        var pre = "sleep 0.2; mkdir -p \"$HOME/Pictures\" \"$HOME/Videos\"; "
+        var pre = "sleep 0.4; mkdir -p \"$HOME/Pictures\" \"$HOME/Videos\"; "
         var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
         if (captureType === "screenshot") {
             var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
             if (captureMode === "fullscreen") return pre + "grim -o \"" + capture.screenRef.name + "\" \"" + pic + "\" && setsid -f wl-copy --type image/png < \"" + pic + "\""
-            if (captureMode === "window")     return "sleep 0.35; mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
+            if (captureMode === "window")     return "sleep 0.4; mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
         } else {
             var vid = "$HOME/Videos/Screenrecord_" + ts + ".mp4"
             if (captureMode === "fullscreen") return pre + "wl-screenrec -o \"" + capture.screenRef.name + "\" -f \"" + vid + "\""
@@ -116,7 +116,7 @@ PanelWindow {
     property string regionCaptureCmd: ""
     Timer {
         id: regionCaptureDelay
-        interval: 60
+        interval: 400
         repeat: false
         onTriggered: {
             captureProc.command = ["bash", "-c", capture.regionCaptureCmd]
