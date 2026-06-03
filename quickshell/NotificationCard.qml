@@ -89,7 +89,14 @@ Rectangle {
                 Image {
                     anchors.fill: parent
                     anchors.margins: 2
-                    source: card.appIcon
+                    source: {
+                        var icon = card.appIcon
+                        if (!icon) return ""
+                        if (icon.indexOf("/") === 0 || icon.indexOf("file://") === 0 || icon.indexOf("image://") === 0) {
+                            return icon
+                        }
+                        return "image://icon/" + icon
+                    }
                     sourceSize.width:  32
                     sourceSize.height: 32
                     fillMode: Image.PreserveAspectFit
