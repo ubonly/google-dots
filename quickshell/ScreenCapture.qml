@@ -23,42 +23,9 @@ PanelWindow {
     visible: isOpen
     color: "transparent"
 
-    // ── Pre-captured freeze image ─────────────────────────────────────────
-    // grim runs silently in the background every 3 seconds so the freeze
-    // frame is always ready instantly when the tool opens.
-    property string freezeImagePath: "/tmp/qs_freeze_" + (capture.screenRef ? capture.screenRef.name : "default") + ".png"
-    property string freezeImage: ""
-
-    Process {
-        id: preCaptureProc
-        command: ["bash", "-c",
-            "grim -o '" + (capture.screenRef ? capture.screenRef.name : "") + "' '" + capture.freezeImagePath + "' 2>/dev/null"]
-        running: false
-        onRunningChanged: {
-            if (!running && !capture.isOpen) {
-                // Update the path with a timestamp to bust the image cache
-                capture.freezeImage = "file://" + capture.freezeImagePath + "?t=" + new Date().getTime()
-            }
-        }
-    }
-
-    // Fire immediately and then every 3 seconds while idle
-    Timer {
-        id: preCaptureTimer
-        interval: 3000
-        repeat: true
-        running: !capture.isOpen && !captureProc.running
-        triggeredOnStart: true
-        onTriggered: {
-            if (!preCaptureProc.running) preCaptureProc.running = true
-        }
-    }
-
     onIsOpenChanged: {
         if (!isOpen) {
             isDragging = false
-            // Update freeze image after closing so it's fresh for next open
-            Qt.callLater(function() { if (!preCaptureProc.running) preCaptureProc.running = true })
         }
     }
 
@@ -93,18 +60,18 @@ PanelWindow {
 
     // ── Commands ──────────────────────────────────────────────────────────
     function getCommand() {
-        var pre = "sleep 0.4; mkdir -p \"$HOME/Pictures\" \"$HOME/Videos\"; "
         var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
         if (captureType === "screenshot") {
-            var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
-            if (captureMode === "fullscreen") return pre + "grim -o \"" + capture.screenRef.name + "\" \"" + pic + "\" && setsid -f wl-copy --type image/png < \"" + pic + "\" >/dev/null 2>&1"
-            if (captureMode === "window")     return "sleep 0.4; mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
+            if (captureMode === "fullscreen") return "mkdir -p \"$HOME/Pictures\"; hyprshot -s -m output -m \"" + capture.screenRef.name + "\" -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
+            if (captureMode === "window")     return "mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m window -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
+            if (captureMode === "region")     return "mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m region -o \"$HOME/Pictures\" -f Screenshot_" + ts + ".png"
         } else {
             var vid = "$HOME/Videos/Screenrecord_" + ts + ".mp4"
-            if (captureMode === "fullscreen") return pre + "wl-screenrec -o \"" + capture.screenRef.name + "\" -f \"" + vid + "\""
-            if (captureMode === "window")     return pre + "wl-screenrec -f \"" + vid + "\""
+            if (captureMode === "fullscreen") return "mkdir -p \"$HOME/Videos\"; wl-screenrec -o \"" + capture.screenRef.name + "\" -f \"" + vid + "\""
+            if (captureMode === "window")     return "mkdir -p \"$HOME/Videos\"; wl-screenrec -f \"" + vid + "\""
+            if (captureMode === "region")     return "mkdir -p \"$HOME/Videos\"; wl-screenrec -f \"" + vid + "\""
         }
-        return pre + "hyprshot -m region"
+        return ""
     }
 
     Process {
@@ -118,56 +85,20 @@ PanelWindow {
     }
 
     function doCapture(hideFirst) {
-        if (captureMode === "region") return // Region mode is handled by dragging
         if (hideFirst) capture.isOpen = false
         var cmd = getCommand()
+        if (!cmd) return
         captureProc.command = ["bash", "-c", cmd]
         captureProc.running = true
     }
 
-    function doCustomRegionCapture() {
-        if (selW < 10 || selH < 10) {
-            isOpen = false
-            return
-        }
-        var absX = Math.round(capture.screenRef.x + capture.selX)
-        var absY = Math.round(capture.screenRef.y + capture.selY)
-        var absW = Math.round(capture.selW)
-        var absH = Math.round(capture.selH)
-        var geometry = absX + "," + absY + " " + absW + "x" + absH
-
-        var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
-        var cmd = ""
-        if (captureType === "screenshot") {
-            var pic = "$HOME/Pictures/Screenshot_" + ts + ".png"
-            cmd = "mkdir -p \"$HOME/Pictures\"; "
-                + "grim -g \"" + geometry + "\" \"" + pic + "\" && "
-                + "setsid -f wl-copy --type image/png < \"" + pic + "\" >/dev/null 2>&1"
-        } else {
-            cmd = "mkdir -p \"$HOME/Videos\"; wl-screenrec -g \"" + geometry + "\" -f \"$HOME/Videos/Screenrecord_" + ts + ".mp4\""
-        }
-
-        capture.isOpen = false
-        regionCaptureCmd = cmd
-        regionCaptureDelay.start()
-    }
-
-    property string regionCaptureCmd: ""
-    Timer {
-        id: regionCaptureDelay
-        interval: 400
-        repeat: false
-        onTriggered: {
-            captureProc.command = ["bash", "-c", capture.regionCaptureCmd]
-            captureProc.running = true
-        }
-    }
-
     function openRegionImmediate() {
+        // Delegate entirely to hyprshot which freezes the screen natively with -z
         captureType = "screenshot"
         captureMode = "region"
-        isOpen = true
-        focusCatcher.forceActiveFocus()
+        captureProc.command = ["bash", "-c",
+            "mkdir -p \"$HOME/Pictures\"; hyprshot -z -s -m region -o \"$HOME/Pictures\" -f Screenshot_$(date +%Y-%m-%d_%H-%M-%S).png"]
+        captureProc.running = true
     }
 
     function openFullscreenWait() {
@@ -192,14 +123,6 @@ PanelWindow {
         Keys.onReturnPressed: capture.doCapture(true)
         Keys.onEnterPressed: capture.doCapture(true)
         Keys.onEscapePressed: capture.isOpen = false
-    }
-
-    // Frozen background image
-    Image {
-        anchors.fill: parent
-        source: capture.freezeImage
-        visible: capture.isOpen && status === Image.Ready
-        cache: false
     }
 
     // ── Dimming and Cutout ────────────────────────────────────────────────
@@ -237,7 +160,7 @@ PanelWindow {
     MouseArea {
         anchors.fill: parent
         cursorShape: capture.captureMode === "region" ? Qt.CrossCursor : Qt.ArrowCursor
-        
+
         onPressed: function(mouse) {
             if (capture.captureMode === "region") {
                 capture.dragStartX = mouse.x
@@ -251,20 +174,44 @@ PanelWindow {
                 capture.isOpen = false
             }
         }
-        
+
         onPositionChanged: function(mouse) {
             if (capture.isDragging) {
                 capture.dragCurX = mouse.x
                 capture.dragCurY = mouse.y
             }
         }
-        
+
         onReleased: function(mouse) {
             if (capture.isDragging) {
                 capture.isDragging = false
                 capture.doCustomRegionCapture()
             }
         }
+    }
+
+    function doCustomRegionCapture() {
+        if (selW < 10 || selH < 10) {
+            isOpen = false
+            return
+        }
+        var absX = Math.round(capture.screenRef.x + capture.selX)
+        var absY = Math.round(capture.screenRef.y + capture.selY)
+        var absW = Math.round(capture.selW)
+        var absH = Math.round(capture.selH)
+        var geometry = absX + "," + absY + " " + absW + "x" + absH
+
+        var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
+        var cmd = ""
+        if (captureType === "screenshot") {
+            cmd = "mkdir -p \"$HOME/Pictures\"; grim -g \"" + geometry + "\" \"$HOME/Pictures/Screenshot_" + ts + ".png\" && setsid -f wl-copy --type image/png < \"$HOME/Pictures/Screenshot_" + ts + ".png\" >/dev/null 2>&1"
+        } else {
+            cmd = "mkdir -p \"$HOME/Videos\"; wl-screenrec -g \"" + geometry + "\" -f \"$HOME/Videos/Screenrecord_" + ts + ".mp4\""
+        }
+
+        capture.isOpen = false
+        captureProc.command = ["bash", "-c", cmd]
+        captureProc.running = true
     }
 
     // ── Main layout (Capture button + Toolbar) ────────────────────────────
@@ -276,10 +223,10 @@ PanelWindow {
         }
         spacing: 12
 
-        // ── Floating "Capture" / "Record" button ──────────────────────────
+        // ── Floating "Capture" / "Record" button ─────────────────────────────────
         Rectangle {
             id: captureButton
-            visible: capture.captureMode !== "region"
+            visible: true
             anchors.horizontalCenter: parent.horizontalCenter
             width: captureButtonRow.implicitWidth + 32
             height: 40
