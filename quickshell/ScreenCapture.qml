@@ -248,29 +248,6 @@ PanelWindow {
         captureProc.running = true
     }
 
-    function doCustomRegionCapture() {
-        if (selW < 10 || selH < 10) {
-            isOpen = false
-            return
-        }
-        var absX = Math.round(capture.screenRef.x + capture.selX)
-        var absY = Math.round(capture.screenRef.y + capture.selY)
-        var absW = Math.round(capture.selW)
-        var absH = Math.round(capture.selH)
-        var geometry = absX + "," + absY + " " + absW + "x" + absH
-
-        var ts = "$(date +%Y-%m-%d_%H-%M-%S)"
-        var cmd = ""
-        if (captureType === "screenshot") {
-            cmd = "mkdir -p \"$HOME/Pictures\"; grim -g \"" + geometry + "\" \"$HOME/Pictures/Screenshot_" + ts + ".png\" && setsid -f wl-copy --type image/png < \"$HOME/Pictures/Screenshot_" + ts + ".png\" >/dev/null 2>&1"
-        } else {
-            cmd = "mkdir -p \"$HOME/Videos\"; wl-screenrec -g \"" + geometry + "\" -f \"$HOME/Videos/Screenrecord_" + ts + ".mp4\""
-        }
-
-        capture.isOpen = false
-        captureProc.command = ["bash", "-c", cmd]
-        captureProc.running = true
-    }
 
     // ── Main layout (Capture button + Toolbar) ────────────────────────────
     Column {
