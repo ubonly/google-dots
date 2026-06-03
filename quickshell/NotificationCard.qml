@@ -48,7 +48,7 @@ Rectangle {
     // autodismiss with hover pause
     Timer {
         id: dismissTimer
-        interval: 3000
+        interval: 7500
         repeat: false
         onTriggered: {
             if (card.notification) card.notification.tracked = false
@@ -61,7 +61,7 @@ Rectangle {
             if (hovered) {
                 dismissTimer.stop()
             } else {
-                dismissTimer.interval = 1000
+                dismissTimer.interval = 2500
                 dismissTimer.restart()
             }
         }
