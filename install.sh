@@ -29,10 +29,10 @@ PACKAGES=(
     # сам квикшелл и шрифты
     "quickshell-git"
     "ttf-roboto"
-    "ttf-material-symbols-variable-git"
+    "ttf-material-symbols-variable"   # официальный пакет из extra, без конфликтов
     "ttf-google-sans"
-    "ttf-inter"
-    
+    "inter-font"                       # правильное имя пакета (extra)
+
     # системные штуки
     "jq"
     "python"
